@@ -161,6 +161,49 @@ export function buildAgenda(queue, settings) {
     }
   }
 
+  /* ── the morning digest ──
+     Most of what each app raises has no hour of its own: a ritual block, a cabinet item
+     running out, a weekly target going out of reach. Notifying each one separately is
+     how a person mutes an app, so they arrive as one line at the start of the day with
+     the deadlines named. The evening sweep closes the same loop from the other end. */
+  if (s.morning != null) {
+    for (let d = 0; d <= 1; d++) {
+      const when = new Date(); when.setDate(when.getDate() + d);
+      when.setHours(s.morning, 0, 0, 0);
+      if (when.getTime() <= now || when.getTime() > horizon) continue;
+
+      const open = queue.all.filter(t => !t.done && !t.isNote);
+      if (!open.length) continue;
+
+      /* Only today's digest may name anything. Tomorrow's is scheduled from today's
+         queue, and by the time it fires half of it will be wrong — a list of things
+         already done, and prayers that were yesterday's. A digest that names stale
+         items is worse than one that names none. */
+      if (d === 0) {
+        /* Prayers are excluded from "out of road" deliberately. A passed prayer is not
+           a deadline in this sense, framing it as one is the pressure Sakina exists to
+           avoid, and firm mode already follows them up on their own. */
+        const urgent = open
+          .filter(t => t.domain !== 'prayer' && (t.over || (t.left != null && t.left <= 0)))
+          .map(t => t.label).slice(0, 3);
+        const first = open.find(t => t.at && t.at.getTime() > when.getTime());
+        rows.push({
+          at: when.toISOString(),
+          title: `${open.length} today`,
+          body: urgent.length ? `Out of road today: ${urgent.join(', ')}.`
+                              : `First up: ${first ? first.label : 'nothing timed'}.`,
+          url: './#/', tag: `morning:${when.toISOString().slice(0, 10)}`
+        });
+      } else {
+        rows.push({
+          at: when.toISOString(), title: 'Today',
+          body: 'Your list is ready.', url: './#/',
+          tag: `morning:${when.toISOString().slice(0, 10)}`
+        });
+      }
+    }
+  }
+
   /* One sweep rather than a notification per remaining row. */
   if (s.eveningSweep != null) {
     const sweep = new Date(); sweep.setHours(s.eveningSweep, 0, 0, 0);
@@ -187,10 +230,17 @@ function inward(t) {
   return `./#/in/${t.app}${tail}`;
 }
 
-/** Replace the stored agenda with this one. */
+/**
+ * Replace the stored agenda with this one.
+ *
+ * `manual:` rows are left alone. The agenda is rebuilt on nearly every render, and the
+ * first version of this wiped the whole table each time — which quietly deleted a test
+ * notification a few seconds after it was queued, so the test could never fire and
+ * looked like a broken push chain rather than a broken clear.
+ */
 export async function pushAgenda(rows) {
   if (!C.signedIn()) return { ok: false };
-  await C.clear('agenda');
+  await C.clear('agenda', 'manual:');
   if (rows.length) await C.upsert('agenda', rows, 'user_id,tag,at');
   return { ok: true, n: rows.length };
 }

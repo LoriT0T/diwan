@@ -1,0 +1,6 @@
+project_id = "mnoiiidzvtezuaxlnubr"
+
+[functions.push]
+# Called by pg_cron with a shared secret rather than a user JWT, so Supabase's own
+# JWT gate is off and the function does the checking itself.
+verify_jwt = false

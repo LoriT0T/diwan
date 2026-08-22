@@ -107,7 +107,14 @@ async function send(sub: { endpoint: string; p256dh: string; auth: string }, pay
 }
 
 /* ---- the run ---- */
-Deno.serve(async () => {
+Deno.serve(async (req) => {
+  /* Called only by pg_cron, which sends a shared secret. Without this the endpoint is
+     open to anyone who guesses the URL — not a data leak, since it only ever sends what
+     is already due, but a free way to burn the project's function quota. */
+  if (req.headers.get('x-diwan-cron') !== Deno.env.get('CRON_SECRET')) {
+    return new Response('no', { status: 401 });
+  }
+
   const SB = Deno.env.get('SB_URL')!;
   const KEY = Deno.env.get('SB_SERVICE_KEY')!;
   const h = { apikey: KEY, Authorization: `Bearer ${KEY}`, 'Content-Type': 'application/json' };

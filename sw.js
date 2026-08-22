@@ -11,7 +11,7 @@
  * straight from the network. So an app whose worker has never run is simply unreadable
  * offline, and read.js reports that rather than pretending.
  */
-const CACHE = 'diwan-v9';
+const CACHE = 'diwan-v10';
 const ASSETS = [
   './', './index.html', './manifest.webmanifest',
   './css/app.css',

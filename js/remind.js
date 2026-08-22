@@ -24,6 +24,7 @@ const DEFAULTS = {
   on: false,
   prayers: true,      // at each computed prayer time
   timed: true,        // wake, light, supplements, rituals — anything with an hour
+  morning: 7,         // one line at the start of the day: how much, and what runs out
   eveningSweep: 21,   // one nudge listing whatever is still open, or null
   session: true,      // rest finished — the one that reaches you mid-set
   quietFrom: 22,      // nothing after this hour…

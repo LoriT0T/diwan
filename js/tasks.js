@@ -381,6 +381,24 @@ export async function buildQueue(snap) {
           action: null, href: anb.url + '#crucible', cta: 'Run it'
         });
       }
+
+      /* A prediction carries a real date, which almost nothing else here does. It gets
+         a midday hour on that date so it can reach you, rather than sitting untimed in
+         a list — an unresolved prediction is the lab lying to itself, in its own words. */
+      for (const pr of A.openPreds()) {
+        const late = since(pr.due);
+        if (late == null || late < 0) continue;            // not due yet
+        out.push({
+          key: 'anbiq:pred:' + pr.id, app: 'anbiq',
+          label: 'Resolve: ' + (pr.text || 'a prediction').slice(0, 60),
+          note: 'Prediction', domain: 'prediction',
+          brief: `You said ${Math.round((pr.conf ?? 0.5) * 100)}% · due ${pr.due}`,
+          at: late === 0 ? at(12) : null, slot: late === 0 ? null : 'any',
+          left: -late, over: late > 0, done: false, tier: 'reality',
+          words: ['prediction', 'resolve'],
+          action: null, href: anb.url + '#research', cta: 'Resolve it'
+        });
+      }
     } catch { /* the reader already reported it */ }
 
     for (const it of (anb.dispatch || [])) {

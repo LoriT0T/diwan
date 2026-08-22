@@ -230,9 +230,13 @@ export async function del(table, col, val) {
 }
 
 /** Empty a table of this account's rows. `user_id=not.is.null` matches everything
-    RLS already limits us to, which is exactly our own. */
-export async function clear(table) {
-  await call(`/rest/v1/${table}?user_id=not.is.null`,
+    RLS already limits us to, which is exactly our own. `keep` excludes rows whose tag
+    starts with a reserved prefix. */
+export async function clear(table, keepPrefix) {
+  const filter = keepPrefix
+    ? `user_id=not.is.null&tag=not.like.${encodeURIComponent(keepPrefix + '*')}`
+    : 'user_id=not.is.null';
+  await call(`/rest/v1/${table}?${filter}`,
     { method: 'DELETE', headers: { Prefer: 'return=minimal' } });
 }
 

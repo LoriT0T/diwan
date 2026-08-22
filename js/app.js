@@ -1252,7 +1252,8 @@ async function wirePush() {
        encryption, Apple — rather than only the browser half. */
     const at = new Date(Date.now() + 60_000).toISOString();
     try {
-      await C.upsert('agenda', [{ at, title: 'Dīwān', body: 'Push is working.', url: './#/', tag: 'test' }], 'user_id,tag,at');
+      /* `manual:` so the next agenda rebuild does not delete it before it can fire. */
+      await C.upsert('agenda', [{ at, title: 'Dīwān', body: 'Push is working.', url: './#/', tag: 'manual:test' }], 'user_id,tag,at');
       note.textContent = 'Queued for one minute from now. If it does not arrive, the Edge Function or its cron is not running yet.';
     } catch (e) { note.textContent = e.message; }
   });
