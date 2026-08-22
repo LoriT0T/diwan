@@ -3,13 +3,14 @@
 The register. Historically a dīwān was the bureau that collected the records of every
 department into one book, so that somebody could look at the whole thing at once.
 
-One page over five apps. What is outstanding, what to do next, and every log on one surface.
+One page over six apps. A day's work in one queue, ticked from the top — and every log on
+one surface.
 
 **Live: <https://lorit0t.github.io/diwan/>**
 
 ---
 
-## The five
+## The six
 
 | | | |
 |---|---|---|
@@ -17,7 +18,58 @@ One page over five apps. What is outstanding, what to do next, and every log on 
 | **Jamāl** | Grooming · skin · fit · scent | <https://lorit0t.github.io/jamal/> |
 | **Anbīq** | Reading · claims · predictions | <https://lorit0t.github.io/anbiq/> |
 | **Sakina** | Prayer · meditation · mood | <https://lorit0t.github.io/sakina/> |
-| **Good Company** | Charisma · social skill | <https://good-company.onrender.com/> |
+| **Charisma Gym** | Charisma · social skill | <https://lorit0t.github.io/charisma-gym/> |
+| **Āfāq** | Screen · road · craft · travel | <https://lorit0t.github.io/afaq/> |
+
+## Today is a queue
+
+One list, in the order the day actually happens. The top item is the one you are on; tick
+it and the next comes up. That is the whole interaction.
+
+**Time decides the sequence, not importance.** A wake time belongs at 07:00 and dimming
+the lights belongs at 22:00, and nothing about priority moves either. Things with no time
+of their own fall to *Any time this week*, ordered by tier. Prayer times are computed here
+with `adhan` — the same library, version and settings Sakina uses, from the coordinates it
+already stores — so the two cannot disagree.
+
+**Ticking writes into the app that owns it.** Compound's own `toggleH`, Jamāl's ritual log,
+Sakina's prayer states. Every tick is one reversible write with an Undo in the toast.
+
+Two things are deliberately not tickable:
+
+- **Anything wanting a real number** — a set, a page count, a mood on two axes. Ticking
+  those would write a fiction, so they link to the app that can take the value properly.
+  They sit under *Needs the app*.
+- **Compound's Situational band.** Its own copy says these are taken for a reason, not
+  daily. Five of them in a tick list turns a considered decision into a chore.
+
+**Salah is in the queue at its real time, and is never scored.** Sakina refuses streaks and
+anything that turns a gap into a failure; a prayer that has passed unmarked simply sits
+there, and nothing here ever writes `missed`.
+
+## Saying it instead of tapping it
+
+The bar at the bottom of Today takes typing or speech. *"showered and did my teeth, then
+took my magnesium"* ticks three rows.
+
+It is keyword matching against the words already on the queue — not understanding. There is
+no model, because the repo is public and static and any key in it would be a key given
+away. That limit sets the design: it names back everything it matched, says out loud
+anything it could not place, and every tick is undoable.
+
+Three distinctions it makes, because each one was a bug first:
+
+- **Already logged**, not "no idea what you mean". Saying you showered when it is ticked
+  should not make you doubt the tool.
+- **Not due today.** "Scalp oil" on a day the oil treatment is not scheduled reports that,
+  rather than falling through to the nearest weaker match and ticking the scalp massage.
+- **Word boundaries, and no bare generic verbs.** "Walk" used to sit under Zone 2, so
+  *"walked the dog"* silently logged a cardio session. A false tick is worse than a missed
+  one, because a missed one you notice.
+
+Speech uses the browser's own recogniser, which means the audio goes to Apple's or Google's
+speech service — worth knowing, given everything else here stays on the device. Typing the
+same sentence does not.
 
 ## How it reads them
 
@@ -45,22 +97,23 @@ Three rules hold this up:
   that is not there — each returns a report saying so. One broken reader must never take
   the page down.
 
-**Good Company is the exception.** It runs on onrender.com, a different origin, which the
-browser walls off completely. It arrives as a pasted export from **Data**, and its numbers
-are always shown with their age.
+Charisma Gym used to be the exception, on onrender.com. It moved onto this origin on
+2026-08-22 and is now read live like the rest; its Render service survives as the voice
+backend only. The pasted-snapshot path stays in **Data** as a fallback for a device holding
+an old export.
 
 ## What it decides
 
-There are already five recommendation engines, each well reasoned inside its own domain.
-This adds a sixth to none of them — every proposal on the Today page was produced by the
-app it belongs to. The only job here is the one no single app can do: deciding which of
-five domains gets today.
+There are already six recommendation engines, each well reasoned inside its own domain.
+This adds a seventh to none of them — every item on Today was raised by the app that owns
+it, and Āfāq's `theOneThing()` and Anbīq's `gaps()` are asked rather than re-derived. The
+only job here is the one no single app can do: putting six domains in one order.
 
-The answer is **one action**. Good Company already wrote the argument — *a list is a
-decision you have pushed back onto the user* — and it is right. The rest is kept
-underneath, in order, quieter.
+Summaries are dropped. An engine saying *"5 rituals due"* is describing five rows already
+on the list individually, and showing both turns a queue into the same work counted twice.
+A raised item survives only if nothing tickable already covers it.
 
-The order, and why it is that order:
+Tier breaks ties among the things with no time of their own:
 
 | Tier | What it catches | Why it sits there |
 |---|---|---|
@@ -82,9 +135,9 @@ trained and protein by Compound; salah and calm by Sakina. When the owning app h
 covered, those are marked answered and left off the list, with a note saying which app
 holds them. Removing that double entry is most of the reason this page exists.
 
-## One backup, all five
+## One backup, all six
 
-Five apps meant five export buttons, which is a habit nobody keeps. **Data → Download
+Six apps meant six export buttons, which is a habit nobody keeps. **Data → Download
 everything** writes one file.
 
 There is deliberately no matching import. Restoring means writing into another app's
@@ -112,13 +165,17 @@ hundreds of megabytes.
 
     index.html        shell + bottom nav
     css/app.css       the whole visual system
-    js/read.js        the adapters — one report per app, the interesting part
-    js/rank.js        arbitration: five engines in, one action out
-    js/store.js       the hub's own store: the Good Company snapshot, and nothing else
+    js/read.js        the adapters — one report per app
+    js/tasks.js       the day's queue: atomic items, ordered by the clock
+    js/write.js       the tick writers — the only place this hub writes to another app
+    js/voice.js       speech capture and the keyword matcher
+    js/rank.js        tier definitions and their rationale
+    js/store.js       the hub's own store — a fallback snapshot, and nothing else
     js/app.js         views and router
+    vendor/adhan…     prayer times, MIT, the exact build Sakina uses
     sw.js             offline shell, network-first for code
 
-The hub has no accent colour of its own. Every saturated pixel belongs to one of the five
+The hub has no accent colour of its own. Every saturated pixel belongs to one of the six
 apps and is taken from that app's own `:root`. There are no web fonts — the five it sits
 above are offline-first with no build step, and a font request would be the only network
 dependency in the set.
@@ -134,9 +191,17 @@ python3 -m http.server 4180
 
 Then open `http://localhost:4180/diwan/`.
 
+## The one hazard that cannot be engineered away
+
+If an app is **open in another tab**, that tab holds its own in-memory copy and may
+overwrite a tick made here on its next save. Every write re-reads from storage immediately
+beforehand, so the worst case is a lost tick rather than a lost day — but reload the app
+after ticking from the hub. Today says so on the page.
+
 ---
 
-*It reads. It never writes to anything but its own key, `diwan.v1`.*
+*It reads six apps. It writes only what you tick, only where that tick belongs, and always
+with an undo.*
 
 *Serving the parent directory is what makes `../compound/js/…` resolve. Clone the sibling
 repos next to this one and the cross-app reads work locally exactly as they do live.*

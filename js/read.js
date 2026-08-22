@@ -57,7 +57,8 @@ const APPS = {
   jamal:    { name: 'Jamāl',       arabic: 'جمال',    tag: 'Grooming · skin · fit · scent',      url: 'https://lorit0t.github.io/jamal/' },
   anbiq:    { name: 'Anbīq',       arabic: 'الأنبيق', tag: 'Reading · claims · predictions',     url: 'https://lorit0t.github.io/anbiq/' },
   sakina:   { name: 'Sakina',      arabic: 'سكينة',   tag: 'Prayer · meditation · mood',         url: 'https://lorit0t.github.io/sakina/' },
-  gc:       { name: 'Charisma Gym', arabic: '',       tag: 'Charisma · social skill',            url: 'https://lorit0t.github.io/charisma-gym/' }
+  gc:       { name: 'Charisma Gym', arabic: '',       tag: 'Charisma · social skill',            url: 'https://lorit0t.github.io/charisma-gym/' },
+  afaq:     { name: 'Āfāq',        arabic: 'آفاق',    tag: 'Screen · road · craft · travel',     url: 'https://lorit0t.github.io/afaq/' }
 };
 
 function blank(id) {
@@ -617,6 +618,81 @@ function readGoodCompany() {
   return R;
 }
 
+
+/* ══════════════════════════════════════════════════════════════════
+   ĀFĀQ — screen, road, craft and travel.
+   Like Anbīq it carries its own engine, and like Charisma Gym it already
+   reduces to a single next action. `theOneThing()` is asked rather than
+   re-derived, so the hub cannot come to a different conclusion than the app.
+   ══════════════════════════════════════════════════════════════════ */
+const detag = h => String(h || '').replace(/<[^>]*>/g, '');
+
+async function readAfaq() {
+  const R = blank('afaq');
+  R.links = [
+    { label: 'Today',  href: R.url },
+    { label: 'Screen', href: R.url + '#screen' },
+    { label: 'Ride',   href: R.url + '#ride' },
+    { label: 'Craft',  href: R.url + '#craft' },
+    { label: 'Travel', href: R.url + '#travel' },
+    { label: 'Model',  href: R.url + '#model' }
+  ];
+
+  let S, E;
+  try {
+    [S, E] = await Promise.all([
+      import('../../afaq/js/store.js'),
+      import('../../afaq/js/engine.js')
+    ]);
+  } catch (e) {
+    R.ok = false; R.reason = 'Āfāq’s modules did not load (' + (e.message || e) + ').'; return R;
+  }
+
+  const st = S.state();
+  R.started = (st.watch || []).length > 0 || (st.rides || []).length > 0
+           || (st.pursuits || []).length > 0 || (st.trips || []).length > 0;
+
+  for (const w of (st.watch || [])) {
+    if (w.on) { add(R.days, w.on, 1); R.feed.push({ t: noon(w.on), d: w.on, app: 'afaq', text: 'Watched something' }); }
+  }
+  for (const r of (st.rides || [])) {
+    add(R.days, r.date, 1);
+    R.feed.push({ t: noon(r.date) + 1, d: r.date, app: 'afaq', text: `Rode ${r.mi || '?'} mi` });
+  }
+  for (const p of (st.pursuits || [])) for (const l of (p.logs || [])) {
+    add(R.days, l.date, 1);
+    R.feed.push({ t: noon(l.date) + 2, d: l.date, app: 'afaq', text: `${l.mins || '?'} min of practice` });
+  }
+  R.last = Object.keys(R.days).sort().pop() || null;
+
+  if (!R.started) { R.stat = [{ l: 'Not started', v: '—' }]; return R; }
+
+  let stale = [], up = [], active = [];
+  try { stale = E.staleQueue() || []; } catch { /* engine wants more than it has */ }
+  try { up = S.upcoming() || []; } catch { }
+  try { active = S.activePursuits() || []; } catch { }
+
+  R.stat = [
+    { l: 'Queue',    v: String((S.inQueue() || []).length), tone: stale.length >= 3 ? 'open' : 'plain' },
+    { l: 'Rides',    v: String((st.rides || []).length) },
+    { l: 'Pursuits', v: String(active.length) },
+    { l: 'Trips',    v: String(up.length) }
+  ];
+
+  /* Its own single-action engine, taken as it comes. */
+  try {
+    const one = E.theOneThing();
+    if (one) R.proposals.push({
+      tier: one.k && /start here/i.test(one.k) ? 'due' : 'reality',
+      app: 'afaq', overdue: 1,
+      why: detag(one.h), what: detag(one.why),
+      cta: 'Open Āfāq', href: R.url + (one.go ? '#' + one.go : '')
+    });
+  } catch { /* not enough state for it to have a view */ }
+
+  return R;
+}
+
 /* ══════════════════════════════════════════════════════════════════
    One backup for all five.
 
@@ -649,6 +725,9 @@ export async function exportEverything() {
 
   try { const A = await import('../../anbiq/js/store.js'); out.parts.anbiq = JSON.parse(A.exportJSON()); }
   catch (e) { out.parts.anbiq = fail(e); }
+
+  try { out.parts.afaq = JSON.parse(localStorage.getItem('afaq.v1') || 'null'); }
+  catch (e) { out.parts.afaq = fail(e); }
 
   try {
     const open = await openSakina();
@@ -687,12 +766,14 @@ export async function readAll() {
     sakina: !!(sakina.ok && sakina.days && sakina.days[t])
   };
 
-  const [jamal, anbiq] = await Promise.all([settle(readJamal(covered)), settle(readAnbiq())]);
+  const [jamal, anbiq, afaq] = await Promise.all([
+    settle(readJamal(covered)), settle(readAnbiq()), settle(readAfaq())
+  ]);
   const gc = readGoodCompany();
 
-  const apps = [compound, jamal, anbiq, sakina, gc].map((r, i) => {
+  const apps = [compound, jamal, anbiq, sakina, gc, afaq].map((r, i) => {
     if (r && r.id) return r;
-    const fallback = blank(['compound', 'jamal', 'anbiq', 'sakina', 'gc'][i]);
+    const fallback = blank(['compound', 'jamal', 'anbiq', 'sakina', 'gc', 'afaq'][i]);
     fallback.ok = false;
     fallback.reason = 'This reader threw: ' + (r && r.reason || 'unknown') + '. The rest of the hub is unaffected.';
     return fallback;

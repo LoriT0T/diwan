@@ -1,13 +1,16 @@
 /* Dīwān — views and router.
  *
- * Reads five apps, ranks what they say, renders one answer. Nothing here decides
- * anything about your health, reading, appearance, prayer or conversation — those
- * judgements belong to the apps that own the domain, and this file only arranges them.
+ * Today is a queue you work from the top down. Everything on it was raised by the app
+ * that owns the domain; the ordering is this file's only opinion, and it follows the
+ * clock rather than importance, because a wake time at 22:00 is not a wake time.
  */
 
 import * as R from './read.js';
 import * as D from './store.js';
-import { arbitrate, quietState, TIER_LABEL, TIER_WHY } from './rank.js';
+import * as W from './write.js';
+import * as V from './voice.js';
+import { buildQueue, BUNDLES, PRAYER_LABEL, place } from './tasks.js';
+import { TIER_LABEL } from './rank.js';
 
 const $ = (s, r = document) => r.querySelector(s);
 const app = $('#app');
@@ -15,312 +18,511 @@ const esc = s => String(s ?? '').replace(/[&<>"']/g, c =>
   ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
 const HUE = id => `var(--${id})`;
-const APP_IDS = ['compound', 'jamal', 'anbiq', 'sakina', 'gc'];
+const APP_IDS = ['compound', 'jamal', 'anbiq', 'sakina', 'gc', 'afaq'];
 const APP_NAME = {
   compound: 'Compound', jamal: 'Jamāl', anbiq: 'Anbīq',
-  sakina: 'Sakina', gc: 'Good Company'
+  sakina: 'Sakina', gc: 'Charisma Gym', afaq: 'Āfāq'
 };
 
-/* One read per render, shared by every view on the page. */
-let SNAP = null;
+let SNAP = null;   // per-app reports
+let Q = null;      // the day's queue
+let lastUndo = null;
 
-function toast(msg, bad) {
+const hhmm = d => d.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
+
+function toast(msg, opts = {}) {
   $('#toast')?.remove();
   const el = document.createElement('div');
-  el.id = 'toast'; el.textContent = msg;
-  if (bad) el.className = 'bad';
+  el.id = 'toast';
+  if (opts.bad) el.className = 'bad';
+  el.innerHTML = `<span>${esc(msg)}</span>` + (opts.undo ? `<button id="t-undo">Undo</button>` : '');
   document.body.appendChild(el);
-  setTimeout(() => el.remove(), bad ? 4200 : 2400);
+  if (opts.undo) $('#t-undo').onclick = async () => { el.remove(); await opts.undo(); };
+  setTimeout(() => el.remove(), opts.bad ? 5200 : opts.undo ? 6500 : 2400);
 }
 
 const DAYNAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
-function longDate() {
+const longDate = () => {
   const d = new Date();
   return `${DAYNAMES[d.getDay()]} ${d.getDate()} ${d.toLocaleDateString('en-GB', { month: 'long' })}`;
-}
+};
 function greeting() {
   const h = new Date().getHours();
-  if (h < 5) return 'Late';
-  if (h < 12) return 'Morning';
-  if (h < 17) return 'Afternoon';
-  if (h < 22) return 'Evening';
+  if (h < 5) return 'Late'; if (h < 12) return 'Morning';
+  if (h < 17) return 'Afternoon'; if (h < 22) return 'Evening';
   return 'Late';
 }
 function ago(dateKey) {
   const n = R.since(dateKey);
   if (n == null) return 'never';
-  if (n === 0) return 'today';
-  if (n === 1) return 'yesterday';
-  if (n < 7) return `${n} days ago`;
-  if (n < 14) return 'last week';
+  if (n === 0) return 'today'; if (n === 1) return 'yesterday';
+  if (n < 14) return `${n} days ago`;
   return `${n} days ago`;
 }
 
 /* ══════════════════════════════════════════════════════════════════
-   TODAY
+   Ticking
    ══════════════════════════════════════════════════════════════════ */
-function viewToday() {
-  const { apps } = SNAP;
-  const { top, rest, count } = arbitrate(apps);
+async function tick(task, action) {
+  const act = action || task.action;
+  if (!act) return;
+  const res = await W.perform(act);
+  if (!res.ok) { toast(res.error, { bad: true }); return false; }
 
-  let head = `<header class="masthead">
-      <p class="eyebrow">${esc(longDate())}</p>
-      <h1>${esc(greeting())}, Musaed</h1>
-      <p class="sub">Five apps, read in place. ${count
-        ? `${count} thing${count === 1 ? '' : 's'} raised — this is the one that matters first.`
-        : 'Nothing raised.'}</p>
-    </header>`;
-
-  /* ---- the one action ---- */
-  let action;
-  if (top) {
-    action = `<div class="act" style="--hue:${HUE(top.app)}">
-      <div class="act-top">
-        <span class="act-tier">${esc(TIER_LABEL[top.tier] || top.tier)}</span>
-        <span class="act-app">${esc(top.appName)}</span>
-      </div>
-      <h2>${esc(top.why)}</h2>
-      <p>${esc(top.what)}</p>
-      <a class="go" href="${esc(top.href)}"${top.href.startsWith('#') ? '' : ' target="_blank" rel="noopener"'}>
-        ${esc(top.cta || 'Open')} <span class="arr" aria-hidden="true">→</span></a>
-    </div>
-    <p class="tiny" style="margin:9px 2px 0">${esc(TIER_WHY[top.tier] || '')} Ranked above ${rest.length} other${rest.length === 1 ? '' : 's'}.</p>`;
-  } else {
-    const q = quietState(apps);
-    action = `<div class="act act-none">
-      <h2>${esc(q.head)}</h2>
-      <p>${esc(q.body)}</p>
-    </div>`;
-  }
-
-  /* ---- the five ---- */
-  const cards = apps.map(a => appCard(a)).join('');
-
-  /* ---- everything else ---- */
-  const restHtml = rest.length ? `
-    <div class="sect">
-      <div class="sect-h"><h3>The rest of today</h3><span class="aside">${rest.length}</span></div>
-      <div class="rest">
-        ${rest.map(p => `
-          <a class="rest-row" style="--hue:${HUE(p.app)}" href="${esc(p.href)}"${p.href.startsWith('#') ? '' : ' target="_blank" rel="noopener"'}>
-            <i class="bar"></i>
-            <div class="body">
-              <div class="why">${esc(p.why)}</div>
-              <div class="what">${esc(p.appName)} · ${esc(p.what).slice(0, 110)}</div>
-            </div>
-            <span class="tier">${esc(TIER_LABEL[p.tier] || p.tier)}</span>
-          </a>`).join('')}
-      </div>
-    </div>` : '';
-
-  /* ---- suppressed duplicates: the reason this page exists ---- */
-  const jam = apps.find(a => a.id === 'jamal');
-  const supp = (jam && jam.suppressed) || [];
-  const suppHtml = supp.length ? (() => {
-    const labels = supp.map(s => s.label.toLowerCase());
-    const owners = [...new Set(supp.map(s => APP_NAME[s.owner]))];
-    const list = labels.length > 1
-      ? labels.slice(0, -1).join(', ') + ' and ' + labels[labels.length - 1]
-      : labels[0];
-    const by = owners.length > 1 ? owners.slice(0, -1).join(', ') + ' and ' + owners[owners.length - 1] : owners[0];
-    return `<div class="sect">
-      <div class="note"><b>Not asking you twice.</b> Jamāl wants ${esc(list)} today.
-      ${esc(by)} already hold${owners.length > 1 ? '' : 's'} ${supp.length > 1 ? 'them' : 'it'} in
-      richer form, so ${supp.length > 1 ? 'they are' : 'it is'} counted as answered and left off
-      the list above.</div>
-    </div>`;
-  })() : '';
-
-  app.innerHTML = head + action + suppHtml + `
-    <div class="sect">
-      <div class="sect-h"><h3>The five</h3><span class="aside">tap to open</span></div>
-      <div class="grid">${cards}</div>
-    </div>` + restHtml;
-}
-
-function appCard(a) {
-  const hue = HUE(a.id);
-  const openLink = a.links[0] ? a.links[0].href : '#/apps';
-
-  if (!a.ok) {
-    return `<a class="app" style="--hue:${hue}" href="${a.id === 'gc' ? '#/data' : esc(openLink)}"${a.id === 'gc' ? '' : ' target="_blank" rel="noopener"'}>
-      <div class="app-h"><span class="app-n">${esc(a.name)}</span>
-        <span class="app-ar">${esc(a.arabic || '')}</span></div>
-      <div class="app-t">${esc(a.tag)}</div>
-      <div class="app-cold">${esc(a.reason)}</div>
-    </a>`;
-  }
-
-  const stats = a.stat.map(s =>
-    `<span class="st"><span class="l">${esc(s.l)}</span>
-      <span class="v ${s.tone === 'open' ? 'open' : s.tone === 'ok' ? 'ok' : ''}">${esc(s.v)}</span></span>`).join('');
-
-  /* Sakina shows the day's five as state. No count-up, no streak, no grade. */
-  let pips = '';
-  if (a.id === 'sakina' && a.prayerToday) {
-    const order = ['fajr', 'dhuhr', 'asr', 'maghrib', 'isha'];
-    pips = `<div class="pips"><span class="pips-l">Today</span>${order.map(k => {
-      const v = a.prayerToday[k];
-      const cls = v === 'prayed' || v === 'jamaah' ? 'on' : v === 'late' ? 'late' : v === 'missed' ? 'missed' : '';
-      return `<i class="pip ${cls}" title="${esc(k)}: ${esc(v)}"></i>`;
-    }).join('')}</div>`;
-  }
-
-  return `<a class="app" style="--hue:${hue}" href="${esc(openLink)}" target="_blank" rel="noopener">
-    <div class="app-h"><span class="app-n">${esc(a.name)}</span>
-      <span class="app-ar">${esc(a.arabic || '')}</span></div>
-    <div class="app-t">${esc(a.tag)}</div>
-    <div class="app-s">${stats}</div>
-    ${pips}
-  </a>`;
+  task.done = res.done !== false;
+  if (act.state) task.state = act.state;
+  lastUndo = async () => {
+    await res.undo();
+    task.done = false; task.state = 'none';
+    await refresh();
+    toast('Put back.');
+  };
+  renderQueue();
+  toast(`${task.label} — logged.`, { undo: lastUndo });
+  return true;
 }
 
 /* ══════════════════════════════════════════════════════════════════
-   LOG — every app's history on one grid, and one merged stream.
+   TODAY — the queue
+   ══════════════════════════════════════════════════════════════════ */
+function viewToday() {
+  const open = Q.openCount, done = Q.doneCount;
+
+  app.innerHTML = `
+    <header class="masthead">
+      <p class="eyebrow">${esc(longDate())}</p>
+      <h1>${esc(greeting())}, Musaed</h1>
+      <p class="sub" id="q-sub"></p>
+    </header>
+    <div id="queue"></div>
+    ${commandBar()}
+    <div class="sect">
+      <div class="note"><b>Ticking here writes into the app that owns it.</b> If that app is
+      also open in another tab, reload it afterwards — its in-memory copy will not know.</div>
+    </div>`;
+
+  renderQueue();
+  wireCommandBar();
+}
+
+function renderQueue() {
+  const box = $('#queue'); if (!box) return;
+  const sub = $('#q-sub');
+  const open = Q.all.filter(t => !t.done);
+  const done = Q.all.filter(t => t.done).concat(Q.done);
+
+  if (sub) sub.textContent = open.length
+    ? `${open.length} left today, in the order the day happens. Tick from the top.`
+    : 'Nothing left. Everything the six apps raised for today is done.';
+
+  if (!open.length) {
+    box.innerHTML = `<div class="act act-none"><h2>Clear</h2>
+      <p>Nothing outstanding across the six. Pick the thing you least want to do — that is
+      usually the signal.</p></div>` + doneBlock(done);
+    wireRows();
+    return;
+  }
+
+  const now = Date.now();
+  const head = open[0];
+  const rest = open.slice(1);
+  const passed  = rest.filter(t => t.at && t.at.getTime() <= now);
+  const coming  = rest.filter(t => t.at && t.at.getTime() > now);
+  const anytime = rest.filter(t => !t.at && !t.isNote);
+  /* Kept apart from the queue: these are not a checkbox, they are the app
+     asking for something only it can take properly. */
+  const notes   = rest.filter(t => !t.at && t.isNote);
+
+  box.innerHTML =
+    headCard(head) +
+    group('Also due now', passed) +
+    group('Later today', coming) +
+    group('Any time this week', anytime) +
+    group('Needs the app', notes) +
+    doneBlock(done);
+
+  wireRows();
+}
+
+/* The top of the list, enlarged. Same row, more room — it is not a different
+   kind of thing, it is just the one you are on. */
+function headCard(t) {
+  const time = t.at ? hhmm(t.at) : (t.cadence || 'any time');
+  const late = t.at && t.at.getTime() <= Date.now();
+  return `<div class="act head" style="--hue:${HUE(t.app)}" data-key="${esc(t.key)}">
+    <div class="act-top">
+      <span class="act-tier">${esc(t.at ? (late ? 'Now · ' + time : 'At ' + time) : (TIER_LABEL[t.tier] || 'Any time'))}</span>
+      <span class="act-app">${esc(APP_NAME[t.app] || t.app)}</span>
+      ${t.note ? `<span class="act-app">${esc(t.note)}</span>` : ''}
+    </div>
+    <h2>${esc(t.label)}</h2>
+    ${t.brief ? `<p>${esc(t.brief)}</p>` : ''}
+    <div class="act-btns">
+      ${t.action ? `<button class="go" data-tick="${esc(t.key)}">Done <span class="arr">✓</span></button>` : ''}
+      ${t.alt ? `<button class="btn alt" data-alt="${esc(t.key)}">${esc(t.alt.label)}</button>` : ''}
+      <a class="btn quiet" href="${esc(t.href)}" target="_blank" rel="noopener">${esc(t.cta || 'Open ' + (APP_NAME[t.app] || ''))} →</a>
+    </div>
+  </div>`;
+}
+
+function group(title, list) {
+  if (!list.length) return '';
+  return `<div class="sect">
+    <div class="sect-h"><h3>${esc(title)}</h3><span class="aside">${list.length}</span></div>
+    <div class="rows">${list.map(row).join('')}</div>
+  </div>`;
+}
+
+function row(t) {
+  const time = t.at ? hhmm(t.at) : (t.mins ? `${t.mins}m` : '');
+  return `<div class="trow${t.isNote ? ' note-row' : ''}" style="--hue:${HUE(t.app)}" data-key="${esc(t.key)}">
+    ${t.action
+      ? `<button class="tick" data-tick="${esc(t.key)}" aria-label="Mark ${esc(t.label)} done"></button>`
+      : `<a class="tick link" href="${esc(t.href)}" target="_blank" rel="noopener" aria-label="Open ${esc(t.label)}">→</a>`}
+    <span class="t-when">${esc(time)}</span>
+    <span class="t-body">
+      <span class="t-label">${esc(t.label)}</span>
+      <span class="t-note">${esc(t.note)}${t.cadence ? ' · ' + esc(t.cadence) : ''}${t.brief && t.isNote ? ' · ' + esc(t.brief.slice(0, 80)) : ''}</span>
+    </span>
+    ${t.alt ? `<button class="t-alt" data-alt="${esc(t.key)}">${esc(t.alt.label)}</button>` : ''}
+    <i class="t-dot"></i>
+  </div>`;
+}
+
+function doneBlock(done) {
+  if (!done.length) return '';
+  return `<div class="sect">
+    <div class="sect-h"><h3>Done today</h3><span class="aside">${done.length}</span></div>
+    <div class="rows done">${done.map(t => `
+      <div class="trow is-done" style="--hue:${HUE(t.app)}" data-key="${esc(t.key)}">
+        ${t.action ? `<button class="tick on" data-untick="${esc(t.key)}" aria-label="Undo ${esc(t.label)}">✓</button>`
+                   : '<span class="tick on static">✓</span>'}
+        <span class="t-when">${t.at ? esc(hhmm(t.at)) : ''}</span>
+        <span class="t-body"><span class="t-label">${esc(t.label)}</span>
+          <span class="t-note">${esc(t.state && t.state !== 'prayed' ? t.state : t.note)}</span></span>
+        <i class="t-dot"></i>
+      </div>`).join('')}</div>
+  </div>`;
+}
+
+function findTask(key) { return Q.all.find(t => t.key === key) || Q.done.find(t => t.key === key); }
+
+function wireRows() {
+  document.querySelectorAll('[data-tick]').forEach(b => {
+    b.onclick = async e => {
+      e.preventDefault();
+      const t = findTask(b.dataset.tick); if (!t) return;
+      b.disabled = true; await tick(t);
+    };
+  });
+  document.querySelectorAll('[data-alt]').forEach(b => {
+    b.onclick = async e => {
+      e.preventDefault();
+      const t = findTask(b.dataset.alt); if (!t || !t.alt) return;
+      b.disabled = true; await tick(t, t.alt.action);
+    };
+  });
+  document.querySelectorAll('[data-untick]').forEach(b => {
+    b.onclick = async e => {
+      e.preventDefault();
+      const t = findTask(b.dataset.untick); if (!t) return;
+      /* Untick is the same write again for a toggle; for prayer it is back to none. */
+      const act = t.domain === 'prayer'
+        ? { ...t.action, state: 'none' } : t.action;
+      const res = await W.perform(act);
+      if (!res.ok) { toast(res.error, { bad: true }); return; }
+      t.done = false; t.state = 'none';
+      renderQueue(); toast('Unticked.');
+    };
+  });
+}
+
+/* ── the command bar ──────────────────────────────────────────────── */
+function commandBar() {
+  const mic = V.speechSupported();
+  return `<div class="cmd">
+    <div class="cmd-in">
+      <input id="cmd-t" type="text" autocomplete="off" autocapitalize="off" spellcheck="false"
+        placeholder="“showered and did my teeth, then fajr”">
+      ${mic ? `<button id="cmd-mic" class="mic" aria-label="Speak">🎙</button>` : ''}
+      <button id="cmd-go" class="cmd-go">Log</button>
+    </div>
+    <p class="cmd-hint" id="cmd-hint">${mic
+      ? 'Say or type what you have done. It matches words against the list above — it does not interpret, so it will tell you what it could not place.'
+      : 'Type what you have done. This browser has no speech recognition, so the microphone is not offered.'}</p>
+  </div>`;
+}
+
+function wireCommandBar() {
+  const input = $('#cmd-t'), hint = $('#cmd-hint');
+  if (!input) return;
+
+  const run = async () => {
+    const text = input.value.trim();
+    if (!text) return;
+    /* Done tasks go in too, so "I showered" about something already ticked
+       hears "already logged" rather than a shrug. */
+    const pool = Q.all.concat(Q.done, Q.dormant || []).filter(t => t.action);
+    const { hits, already, notDue, misses, ambiguous } = V.match(text, pool, BUNDLES);
+
+    if (!hits.length && !ambiguous.length && !already.length && !notDue.length) {
+      hint.innerHTML = `<b>Nothing matched.</b> “${esc(text)}” did not line up with anything tickable on the list. Tap it instead, or use the words as they appear above.`;
+      return;
+    }
+
+    const undos = [];
+    for (const h of hits) {
+      const res = await W.perform(h.task.action);
+      if (res.ok) { h.task.done = true; undos.push(res.undo); } else h.failed = res.error;
+    }
+    renderQueue(); wireCommandBar();
+    $('#cmd-t').value = '';
+
+    const okd = hits.filter(h => !h.failed);
+    const bits = [];
+    if (okd.length) bits.push(`<b>Ticked:</b> ${okd.map(h => esc(h.task.label)).join(', ')}.`);
+    for (const h of hits.filter(h => h.failed)) bits.push(`<b>${esc(h.task.label)} failed:</b> ${esc(h.failed)}`);
+    if (already.length) bits.push(`<b>Already logged:</b> ${already.map(a => esc(a.task.label)).join(', ')}.`);
+    if (notDue.length) bits.push(`<b>Not due today:</b> ${notDue.map(n => esc(n.task.label)).join(', ')}. Left alone rather than ticked early.`);
+    for (const a of ambiguous) bits.push(`<b>“${esc(a.fragment)}”</b> could be ${a.tasks.map(t => esc(t.label)).join(' or ')} — tap the one you meant.`);
+    if (misses.length) bits.push(`<b>Not placed:</b> ${misses.map(m => '“' + esc(m) + '”').join(', ')}. Nothing was ticked for those.`);
+    $('#cmd-hint').innerHTML = bits.join('<br>');
+
+    if (undos.length) toast(`${undos.length} ticked.`, {
+      undo: async () => { for (const u of undos) await u(); await refresh(); toast('Put back.'); }
+    });
+  };
+
+  $('#cmd-go').onclick = run;
+  input.onkeydown = e => { if (e.key === 'Enter') run(); };
+
+  const micBtn = $('#cmd-mic');
+  if (micBtn) {
+    let stop = null;
+    micBtn.onclick = () => {
+      if (stop) { stop(); stop = null; return; }
+      micBtn.classList.add('live');
+      hint.textContent = 'Listening…';
+      stop = V.listen({
+        onPartial: t => { input.value = t; },
+        onFinal: t => { input.value = t; run(); },
+        onError: m => { hint.textContent = m; micBtn.classList.remove('live'); stop = null; },
+        onEnd: () => { micBtn.classList.remove('live'); stop = null; }
+      });
+    };
+  }
+}
+
+/* ══════════════════════════════════════════════════════════════════
+   APP DETAIL — what is important inside one app
+   ══════════════════════════════════════════════════════════════════ */
+function viewApp(id) {
+  const a = SNAP.apps.find(x => x.id === id);
+  if (!a) { location.hash = '#/apps'; return; }
+  const hue = HUE(a.id);
+  const mine = Q.all.filter(t => t.app === id && !t.done);
+  const mineDone = Q.all.concat(Q.done).filter(t => t.app === id && t.done);
+
+  const stats = a.ok && a.started
+    ? `<div class="card pad"><div class="app-s big">${a.stat.map(s =>
+        `<span class="st"><span class="l">${esc(s.l)}</span>
+          <span class="v ${s.tone === 'open' ? 'open' : s.tone === 'ok' ? 'ok' : ''}">${esc(s.v)}</span></span>`).join('')}</div></div>`
+    : `<div class="card pad"><p class="small">${esc(a.ok ? 'Nothing logged on this device yet.' : a.reason)}</p></div>`;
+
+  /* Each app's own engine, quoted rather than re-derived. */
+  const engine = (a.engine || []).length ? `
+    <div class="sect">
+      <div class="sect-h"><h3>What ${esc(a.name)} says</h3><span class="aside">its own engine</span></div>
+      <div class="rows">${a.engine.map(r => `
+        <div class="trow note-row" style="--hue:${hue}">
+          <span class="tick blank"></span><span class="t-when"></span>
+          <span class="t-body"><span class="t-label">${esc(r.t)}</span>
+            <span class="t-note">${esc(r.p)}</span></span><i class="t-dot"></i>
+        </div>`).join('')}</div>
+    </div>` : '';
+
+  /* Same suppression as the queue: drop the counts of rows already listed above,
+     and anything the app's own engine has already said in its own words. */
+  const engineTitles = new Set((a.engine || []).map(r => r.t));
+  const notes = (a.proposals || []).filter(p =>
+    p.tier !== 'housekeeping' && p.tier !== 'due' && !engineTitles.has(p.why));
+  const raised = notes.length ? `
+    <div class="sect">
+      <div class="sect-h"><h3>Raised</h3><span class="aside">${notes.length}</span></div>
+      <div class="rows">${notes.map(p => `
+        <a class="trow note-row" style="--hue:${hue}" href="${esc(p.href)}"${p.href.startsWith('#') ? '' : ' target="_blank" rel="noopener"'}>
+          <span class="tick link">→</span>
+          <span class="t-when">${esc(TIER_LABEL[p.tier] || '')}</span>
+          <span class="t-body"><span class="t-label">${esc(p.why)}</span>
+            <span class="t-note">${esc(p.what)}</span></span><i class="t-dot"></i>
+        </a>`).join('')}</div>
+    </div>` : '';
+
+  const dispatch = (a.dispatch || []).length ? `
+    <div class="sect">
+      <div class="sect-h"><h3>Dispatch</h3><span class="aside">left overnight</span></div>
+      ${a.dispatch.map(i => `<div class="card pad" style="margin-bottom:8px">
+        <div class="t-label">${esc(i.title)}</div>
+        <p class="small" style="margin:6px 0 0">${esc(i.body)}</p></div>`).join('')}
+    </div>` : '';
+
+  app.innerHTML = `
+    <header class="masthead">
+      <p class="eyebrow"><a href="#/apps" class="back">← Apps</a></p>
+      <h1 style="color:${hue}">${esc(a.name)}${a.arabic ? ` <span class="ar">${esc(a.arabic)}</span>` : ''}</h1>
+      <p class="sub">${esc(a.tag)}</p>
+    </header>
+    ${stats}
+    ${mine.length ? `<div class="sect">
+      <div class="sect-h"><h3>Outstanding today</h3><span class="aside">${mine.length}</span></div>
+      <div class="rows">${mine.map(row).join('')}</div>
+    </div>` : `<div class="sect"><div class="note">Nothing outstanding in ${esc(a.name)} today.</div></div>`}
+    ${engine}
+    ${raised}
+    ${dispatch}
+    ${mineDone.length ? `<div class="sect">
+      <div class="sect-h"><h3>Done today</h3><span class="aside">${mineDone.length}</span></div>
+      <div class="rows done">${mineDone.map(t => `
+        <div class="trow is-done" style="--hue:${hue}">
+          <span class="tick on static">✓</span><span class="t-when">${t.at ? esc(hhmm(t.at)) : ''}</span>
+          <span class="t-body"><span class="t-label">${esc(t.label)}</span></span><i class="t-dot"></i>
+        </div>`).join('')}</div></div>` : ''}
+    <div class="sect">
+      <div class="sect-h"><h3>Go to</h3></div>
+      <div class="links">${a.links.map(l =>
+        `<a class="lnk" href="${esc(l.href)}" target="_blank" rel="noopener">${esc(l.label)}</a>`).join('')}</div>
+    </div>`;
+
+  wireRows();
+}
+
+/* ══════════════════════════════════════════════════════════════════
+   LOG
    ══════════════════════════════════════════════════════════════════ */
 function viewLog() {
   const { apps, today } = SNAP;
-  const WEEKS = 8;
+  const WEEKS = 13;
 
-  /* Monday-start weeks, matching Compound's schedule and week strip. */
-  const dow = (new Date(today + 'T00:00').getDay() + 6) % 7;
-  const thisMonday = R.shift(today, -dow);
+  const off = (new Date(today + 'T00:00').getDay() + 6) % 7;
+  const thisMonday = R.shift(today, -off);
   const start = R.shift(thisMonday, -7 * (WEEKS - 1));
 
   const rows = [];
-  for (let w = 0; w < WEEKS; w++) {
-    const wkStart = R.shift(start, w * 7);
+  for (let wk = 0; wk < WEEKS; wk++) {
+    const wkStart = R.shift(start, wk * 7);
     const cells = [];
     for (let d = 0; d < 7; d++) {
       const key = R.shift(wkStart, d);
       const future = key > today;
       const active = apps.filter(a => a.ok && a.days && a.days[key]);
       cells.push(`<div class="cell${key === today ? ' today' : ''}${future ? ' future' : ''}" title="${esc(key)}${active.length ? ' — ' + active.map(a => a.name).join(', ') : future ? '' : ' — nothing logged'}">
-        ${APP_IDS.map(id => {
-          const on = !future && active.some(a => a.id === id);
-          return `<i class="${on ? 'on' : ''}" style="--c:${HUE(id)}"></i>`;
-        }).join('')}
+        ${APP_IDS.map(id => `<i class="${!future && active.some(a => a.id === id) ? 'on' : ''}" style="--c:${HUE(id)}"></i>`).join('')}
       </div>`);
     }
-    const label = new Date(wkStart + 'T00:00').toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
-    rows.push(`<div class="heat-row"><span class="heat-lab">${esc(label.replace(' ', ' '))}</span>${cells.join('')}</div>`);
+    const lab = new Date(wkStart + 'T00:00').toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
+    rows.push(`<div class="heat-row"><span class="heat-lab">${esc(lab)}</span>${cells.join('')}</div>`);
   }
 
-  const dowHead = `<div class="heat-dow"><span class="heat-lab" style="width:30px"></span>${
+  const dowHead = `<div class="heat-dow"><span class="heat-lab"></span>${
     ['M', 'T', 'W', 'T', 'F', 'S', 'S'].map(d => `<span>${d}</span>`).join('')}</div>`;
 
   const key = `<div class="heat-key">${apps.map(a =>
     `<span class="k"><i style="--c:${HUE(a.id)}"></i>${esc(a.name)}</span>`).join('')}</div>`;
 
-  /* per-app totals over the window */
+  /* Per-app: days logged, and the longest recent silence — the number that
+     actually says which domain is slipping. */
   const totals = apps.map(a => {
-    const n = a.ok ? Object.keys(a.days || {}).filter(k => k >= start && k <= today).length : 0;
-    return `<span class="st"><span class="l">${esc(a.name)}</span><span class="v">${n}</span></span>`;
+    const days = a.ok ? Object.keys(a.days || {}).filter(k => k >= start && k <= today) : [];
+    const gap = a.last != null ? R.since(a.last) : null;
+    return `<div class="tot" style="--hue:${HUE(a.id)}">
+      <i></i><span class="tn">${esc(a.name)}</span>
+      <span class="tv">${days.length}<small>d</small></span>
+      <span class="tg${gap != null && gap >= 3 ? ' warn' : ''}">${gap == null ? '—' : gap === 0 ? 'today' : gap + 'd ago'}</span>
+    </div>`;
   }).join('');
 
-  /* merged stream */
   const feed = apps.filter(a => a.ok).flatMap(a => (a.feed || []).map(f => ({ ...f, name: a.name })))
-    .sort((x, y) => y.t - x.t).slice(0, 60);
+    .sort((x, y) => y.t - x.t).slice(0, 120);
 
   let lastDay = null;
   const feedHtml = feed.length ? feed.map(f => {
     const showDay = f.d !== lastDay; lastDay = f.d;
     const when = showDay
-      ? (f.d === today ? 'Today' : f.d === R.shift(today, -1) ? 'Yesterday'
+      ? (f.d === today ? 'Today' : f.d === R.shift(today, -1) ? 'Yest'
         : new Date(f.d + 'T00:00').toLocaleDateString('en-GB', { day: 'numeric', month: 'short' }))
       : '';
-    return `<div class="fd" style="--hue:${HUE(f.app)}">
-      <i class="bar"></i>
-      <span class="when">${esc(when)}</span>
-      <span class="txt"><b>${esc(f.name)}</b> — ${esc(f.text)}</span>
-    </div>`;
+    return `<div class="fd${showDay ? ' newday' : ''}" style="--hue:${HUE(f.app)}">
+      <i class="bar"></i><span class="when">${esc(when)}</span>
+      <span class="txt"><b>${esc(f.name)}</b> ${esc(f.text)}</span></div>`;
   }).join('') : '<p class="small" style="padding:6px 0">Nothing logged on this device yet.</p>';
 
   app.innerHTML = `
-    <header class="masthead">
+    <header class="masthead tight">
       <p class="eyebrow">Everything, one surface</p>
       <h1>Log</h1>
-      <p class="sub">Eight weeks. Each day is one cell, split five ways — one sliver per app.
-      A sliver missing all the way down a column is the domain you are losing, which is the
-      thing no single app can show you.</p>
+      <p class="sub">A quarter. Each day is one cell split six ways, one sliver per app.
+      A sliver missing all the way down a column is the domain you are losing.</p>
     </header>
-
     <div class="card pad">
       <div class="heat"><div class="heat-in">${dowHead}${rows.join('')}</div></div>
       ${key}
     </div>
-
     <div class="sect">
-      <div class="sect-h"><h3>Days logged, 8 weeks</h3></div>
-      <div class="card pad"><div class="app-s">${totals}</div></div>
+      <div class="sect-h"><h3>Days logged · last touched</h3><span class="aside">13 weeks</span></div>
+      <div class="card pad"><div class="tots">${totals}</div></div>
     </div>
-
     <div class="sect">
-      <div class="sect-h"><h3>Recent activity</h3><span class="aside">${feed.length} entries</span></div>
+      <div class="sect-h"><h3>Activity</h3><span class="aside">${feed.length}</span></div>
       <div class="card pad"><div class="feed">${feedHtml}</div></div>
     </div>`;
 }
 
 /* ══════════════════════════════════════════════════════════════════
-   APPS — the navigation menu.
+   APPS
    ══════════════════════════════════════════════════════════════════ */
 function viewApps() {
-  const { apps } = SNAP;
-
-  const cards = apps.map(a => {
-    const hue = HUE(a.id);
-    const links = a.links.map(l =>
-      `<a class="lnk" href="${esc(l.href)}" target="_blank" rel="noopener">${esc(l.label)}</a>`).join('');
-    const status = a.ok
-      ? (a.started
-        ? `<div class="app-s">${a.stat.map(s => `<span class="st"><span class="l">${esc(s.l)}</span><span class="v ${s.tone === 'open' ? 'open' : ''}">${esc(s.v)}</span></span>`).join('')}</div>
-           <p class="tiny" style="margin-top:9px">Last logged ${esc(ago(a.last))}.</p>`
-        : `<p class="app-cold">Nothing logged on this device yet.</p>`)
-      : `<p class="app-cold">${esc(a.reason)}</p>`;
-
-    return `<div class="app" style="--hue:${hue};cursor:default">
+  const cards = SNAP.apps.map(a => {
+    const openN = Q.all.filter(t => t.app === a.id && !t.done).length;
+    const stats = a.ok && a.started
+      ? `<div class="app-s">${a.stat.slice(0, 4).map(s =>
+          `<span class="st"><span class="l">${esc(s.l)}</span>
+            <span class="v ${s.tone === 'open' ? 'open' : ''}">${esc(s.v)}</span></span>`).join('')}</div>`
+      : `<p class="app-cold">${esc(a.ok ? 'Nothing logged on this device yet.' : a.reason)}</p>`;
+    return `<a class="app" style="--hue:${HUE(a.id)}" href="#/app/${a.id}">
       <div class="app-h"><span class="app-n">${esc(a.name)}</span>
-        <span class="app-ar">${esc(a.arabic || '')}</span></div>
+        ${openN ? `<span class="badge">${openN} due</span>` : '<span class="app-ar">' + esc(a.arabic || '') + '</span>'}</div>
       <div class="app-t">${esc(a.tag)}</div>
-      ${status}
-      <div class="links">${links}</div>
-    </div>`;
+      ${stats}
+    </a>`;
   }).join('');
 
   app.innerHTML = `
     <header class="masthead">
-      <p class="eyebrow">The five, and the way in</p>
+      <p class="eyebrow">The six, and the way in</p>
       <h1>Apps</h1>
-      <p class="sub">Every page of every app, one tap away. Each opens in its own tab so this
-      one keeps its place.</p>
+      <p class="sub">Tap one for what is important inside it right now — what it is asking for,
+      what its own engine is saying, and every page one tap further.</p>
     </header>
-    <div class="grid" style="grid-template-columns:1fr">${cards}</div>
-
-    <div class="sect">
-      <div class="note"><b>Why Good Company is different.</b> The other four are served from
-      this same address, so this page reads them where they sit. Good Company runs on
-      onrender.com — a different origin, which the browser walls off completely. Its numbers
-      here come from a snapshot you paste in on the Data page.</div>
-    </div>`;
+    <div class="grid">${cards}</div>`;
 }
 
 /* ══════════════════════════════════════════════════════════════════
-   DATA — the Good Company bridge, one backup, and the diagnostics.
+   DATA
    ══════════════════════════════════════════════════════════════════ */
 function viewData() {
   const { apps } = SNAP;
   const snap = D.gc();
   const lastB = D.lastBackup();
+  const p = place();
 
   const diag = apps.map(a => {
     const days = Object.keys(a.days || {}).length;
     let cls, msg;
     if (!a.ok) { cls = 'down'; msg = a.reason; }
-    else if (a.offOrigin) {
-      /* Never claim to have read this one. It is a snapshot and it ages. */
-      cls = a.age > 14 ? 'cold' : 'up';
-      msg = `From a snapshot pasted ${ago(R.iso(new Date(snap.importedAt)))} — a different origin, `
-          + `so it cannot be read directly. ${days} days in the snapshot, newest ${ago(a.last)}.`;
+    else if (a.source === 'snapshot') {
+      cls = 'cold';
+      msg = `From a pasted snapshot${snap ? ' ' + ago(R.iso(new Date(snap.importedAt))) : ''}. `
+          + `${days} days in it, newest ${ago(a.last)}.`;
     }
     else if (a.started) { cls = 'up'; msg = `Read directly from this device. ${days} days on record, last ${ago(a.last)}.`; }
     else { cls = 'cold'; msg = 'Readable, but nothing logged on this device yet.'; }
@@ -330,43 +532,34 @@ function viewData() {
 
   app.innerHTML = `
     <header class="masthead">
-      <p class="eyebrow">The bridge, the backup, the wiring</p>
+      <p class="eyebrow">The backup and the wiring</p>
       <h1>Data</h1>
-      <p class="sub">This hub keeps almost nothing. It reads the other apps where they already
-      live, so there is no second copy of your data to fall out of date.</p>
+      <p class="sub">This hub keeps almost nothing. It reads the apps where they already live,
+      so there is no second copy to fall out of date — and it writes back only what you tick.</p>
     </header>
 
     <div class="sect">
-      <div class="sect-h"><h3>Good Company snapshot</h3>
-        <span class="aside">${snap ? esc(ago(R.iso(new Date(snap.importedAt)))) : 'never'}</span></div>
+      <div class="sect-h"><h3>One backup, all six</h3>
+        <span class="aside">${lastB ? esc(ago(lastB)) : 'never'}</span></div>
       <div class="card pad">
-        <p class="small" style="margin:0 0 11px">Good Company is on another origin, so nothing here
-        can reach it. Open its hub, use <b>Export</b>, and paste the file below. Everything else
-        on this page updates by itself.</p>
-        <textarea id="gc-in" placeholder="Paste the Good Company export JSON here…" spellcheck="false"></textarea>
-        <div class="btn-row">
-          <button class="btn" id="gc-save">Import snapshot</button>
-          <a class="btn quiet" href="https://good-company.onrender.com/" target="_blank" rel="noopener">Open Good Company</a>
-          ${snap ? '<button class="btn quiet danger" id="gc-forget">Forget it</button>' : ''}
-        </div>
-        ${snap ? `<p class="tiny" style="margin-top:11px">Holding ${esc(String((snap.data.events || []).length))} events,
-          ${esc(String((snap.data.field || []).length))} field entries and
-          ${esc(String((snap.data.calls || []).length))} calls, as of
-          ${esc(new Date(snap.importedAt).toLocaleString('en-GB'))}.</p>` : ''}
+        <p class="small" style="margin:0 0 11px">Six apps meant six export buttons, which is a
+        habit nobody keeps. This writes one file.</p>
+        <div class="btn-row"><button class="btn" id="dl">Download everything</button></div>
+        <p class="tiny" style="margin-top:11px"><b>Export only, on purpose.</b> Restoring means
+        writing a whole app's state at once, and each app already validates its own restore.
+        Ticks from Today are single, reversible writes — that is a different thing. Audio tracks
+        are not included.</p>
       </div>
     </div>
 
     <div class="sect">
-      <div class="sect-h"><h3>One backup, all five</h3>
-        <span class="aside">${lastB ? esc(ago(lastB)) : 'never'}</span></div>
+      <div class="sect-h"><h3>Prayer times</h3><span class="aside">${esc(p.label)}</span></div>
       <div class="card pad">
-        <p class="small" style="margin:0 0 11px">Five apps meant five export buttons, which is a
-        habit nobody keeps. This writes one file.</p>
-        <div class="btn-row"><button class="btn" id="dl">Download everything</button></div>
-        <p class="tiny" style="margin-top:11px"><b>Export only, on purpose.</b> Restoring means
-        writing into another app's storage, and each app already validates its own restore
-        properly. Bringing data back is done inside the app it belongs to. Audio tracks are not
-        included — a few would make the file hundreds of megabytes.</p>
+        <p class="small" style="margin:0">Computed here with the same library, version and
+        settings Sakina uses, from the coordinates it already stores — so the times on Today and
+        the times in Sakina cannot disagree. Change them in Sakina and this follows.</p>
+        <p class="tiny" style="margin:9px 0 0">${esc(p.method)} · ${esc(p.madhab)} ·
+        ${p.latitude.toFixed(4)}, ${p.longitude.toFixed(4)}</p>
       </div>
     </div>
 
@@ -374,98 +567,97 @@ function viewData() {
       <div class="sect-h"><h3>What this page can see</h3></div>
       <div class="card pad"><div class="diag">${diag}</div></div>
       <p class="tiny" style="margin:10px 2px 0">Green: read directly from this device.
-      Grey: readable, but empty here. Red: unreachable, with the reason.</p>
+      Grey: readable but empty, or a pasted snapshot. Red: unreachable, with the reason.</p>
+    </div>
+
+    <div class="sect">
+      <div class="sect-h"><h3>Charisma Gym snapshot</h3>
+        <span class="aside">fallback</span></div>
+      <div class="card pad">
+        <p class="small" style="margin:0 0 11px">Charisma Gym moved onto this origin and is now
+        read live like the rest. This box stays only for a device that holds an old export but
+        has never opened the app here.</p>
+        <textarea id="gc-in" placeholder="Paste an old Good Company export…" spellcheck="false"></textarea>
+        <div class="btn-row">
+          <button class="btn" id="gc-save">Import snapshot</button>
+          ${snap ? '<button class="btn quiet danger" id="gc-forget">Forget it</button>' : ''}
+        </div>
+      </div>
     </div>
 
     <div class="sect">
       <div class="note"><b>Storage is per-device, and that is not fixable from here.</b>
-      These apps have no accounts and no server by design, so a track made on the laptop is not
-      on the phone. This page reads whichever device it is open on. The backup above is the way
-      across.</div>
+      These apps have no accounts and no server by design. This page reads whichever device it
+      is open on. The backup above is the way across.</div>
     </div>`;
 
   $('#gc-save').onclick = () => {
     const txt = $('#gc-in').value.trim();
-    if (!txt) { toast('Paste the export first.', true); return; }
-    try {
-      const n = D.importGC(txt);
-      toast(`Imported — ${n.events} events, ${n.field} field entries.`);
-      refresh();
-    } catch (e) { toast(e.message, true); }
+    if (!txt) { toast('Paste the export first.', { bad: true }); return; }
+    try { const n = D.importGC(txt); toast(`Imported — ${n.events} events.`); refresh(); }
+    catch (e) { toast(e.message, { bad: true }); }
   };
-  $('#gc-forget') && ($('#gc-forget').onclick = () => {
-    D.forgetGC(); toast('Snapshot removed.'); refresh();
-  });
+  $('#gc-forget') && ($('#gc-forget').onclick = () => { D.forgetGC(); toast('Snapshot removed.'); refresh(); });
 
   $('#dl').onclick = async () => {
     const btn = $('#dl'); btn.disabled = true; btn.textContent = 'Collecting…';
     try {
       const data = await R.exportEverything();
       const stamp = R.iso();
-      const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
-      const url = URL.createObjectURL(blob);
+      const url = URL.createObjectURL(new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' }));
       const a = document.createElement('a');
       a.href = url; a.download = `diwan-${stamp}.json`;
       document.body.appendChild(a); a.click(); a.remove();
       setTimeout(() => URL.revokeObjectURL(url), 1000);
       D.markBackup(stamp);
-      const skipped = Object.entries(data.parts)
-        .filter(([, v]) => v && (v.error || v.skipped)).map(([k]) => k);
-      toast(skipped.length ? `Saved. Not included: ${skipped.join(', ')}.` : 'Saved — all five.');
-      btn.disabled = false; btn.textContent = 'Download everything';
-    } catch (e) {
-      toast('Export failed: ' + e.message, true);
-      btn.disabled = false; btn.textContent = 'Download everything';
-    }
+      const skipped = Object.entries(data.parts).filter(([, v]) => v && (v.error || v.skipped)).map(([k]) => k);
+      toast(skipped.length ? `Saved. Not included: ${skipped.join(', ')}.` : 'Saved — everything.');
+    } catch (e) { toast('Export failed: ' + e.message, { bad: true }); }
+    btn.disabled = false; btn.textContent = 'Download everything';
   };
 }
 
 /* ══════════════════════════════════════════════════════════════════
    Router
    ══════════════════════════════════════════════════════════════════ */
-const ROUTES = {
-  '#/':     { view: viewToday, nav: 'today' },
-  '#/log':  { view: viewLog,   nav: 'log' },
-  '#/apps': { view: viewApps,  nav: 'apps' },
-  '#/data': { view: viewData,  nav: 'data' }
-};
-
 function paint() {
   const hash = location.hash || '#/';
-  const r = ROUTES[hash] || ROUTES['#/'];
-  r.view();
-  document.querySelectorAll('.nav a').forEach(a => a.classList.toggle('on', a.dataset.nav === r.nav));
+  const m = hash.match(/^#\/app\/([a-z]+)$/);
+  let nav = 'today';
+  if (m) { nav = 'apps'; viewApp(m[1]); }
+  else if (hash === '#/log') { nav = 'log'; viewLog(); }
+  else if (hash === '#/apps') { nav = 'apps'; viewApps(); }
+  else if (hash === '#/data') { nav = 'data'; viewData(); }
+  else viewToday();
+  document.querySelectorAll('.nav a').forEach(a => a.classList.toggle('on', a.dataset.nav === nav));
   window.scrollTo(0, 0);
 }
 
 async function refresh() {
   SNAP = await R.readAll();
+  Q = await buildQueue(SNAP);
   paint();
 }
 
 window.addEventListener('hashchange', paint);
 
-/* Come back to the tab after logging something next door and the numbers should
-   already be right — the apps write to the same storage this page reads. */
 let lastRead = Date.now();
 document.addEventListener('visibilitychange', () => {
   if (document.visibilityState === 'visible' && Date.now() - lastRead > 4000) {
-    lastRead = Date.now();
-    refresh();
+    lastRead = Date.now(); refresh();
   }
 });
 
-app.innerHTML = `<header class="masthead"><p class="eyebrow">Reading five apps…</p>
-  <h1>Dīwān</h1><p class="sub">Opening Compound, Jamāl, Anbīq and Sakina where they sit.</p></header>`;
+app.innerHTML = `<header class="masthead"><p class="eyebrow">Reading the apps…</p>
+  <h1>Dīwān</h1><p class="sub">Opening Compound, Jamāl, Anbīq, Sakina, Charisma Gym and Āfāq where they sit.</p></header>`;
 
 refresh().catch(e => {
   app.innerHTML = `<header class="masthead"><p class="eyebrow">Something broke</p>
     <h1>Dīwān</h1><p class="sub">The hub could not finish reading: ${esc(e.message || e)}</p></header>
-    <div class="note">Every reader is meant to fail on its own without taking the page down,
-    so this is a bug in the hub rather than in one of the apps. The apps themselves are
-    untouched — this page only ever reads them.</div>`;
+    <div class="note">Every reader is meant to fail on its own without taking the page down, so
+    this is a bug in the hub rather than in one of the apps. Nothing was written anywhere.</div>`;
+  console.error(e);
 });
 
-/* Production only: a stale worker makes local development miserable. */
 const isLocal = ['localhost', '127.0.0.1'].includes(location.hostname);
 if ('serviceWorker' in navigator && !isLocal) navigator.serviceWorker.register('sw.js').catch(() => {});
