@@ -160,7 +160,15 @@ const EMPTY_DAY = { fajr: 'none', dhuhr: 'none', asr: 'none', maghrib: 'none', i
 /* Sakina's own shape: five states per prayer, not a checkbox, because a binary
    flattens on-time and late into one mark. Ticking here sets `prayed`; the
    jamāʿah button sets `jamaah`. Nothing here ever writes `missed` — the app
-   refuses to turn a gap into a failure and so does this. */
+   refuses to turn a gap into a failure and so does this.
+
+   Undo restores the prior *value*, not the prior absence of a row. Ticking the
+   first prayer of a day creates that day's row, and undo leaves it behind with
+   every state back at `none`. That is deliberate: Sakina's own `setPrayerState`
+   creates the row the same way and never deletes one, and a row of all-`none`
+   reads identically to no row everywhere it is consumed — `getPrayerDay` returns
+   an empty day for a missing key, and both the grid and `advice.ts` count a day
+   as logged only when some prayer is not `none`. */
 async function sakinaPrayer({ date, prayer, state }) {
   const db = await sakinaDb();
   try {
