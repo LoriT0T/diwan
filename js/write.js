@@ -101,6 +101,29 @@ function jamalInside({ date, id, value }) {
   };
 }
 
+/* Cabinet: replacing a consumable resets its clock and its use count, exactly as
+   Jamāl's own cabDone does. */
+function jamalCab({ id }) {
+  const st = RAW('jamal.v1');
+  if (!st) return { ok: false, error: 'Jamāl has no data on this device yet. Open it once first.' };
+  st.cab ||= {};
+  const before = st.cab[id] ? { ...st.cab[id] } : undefined;
+  const today = new Date();
+  const iso = new Date(today.getTime() - today.getTimezoneOffset() * 6e4).toISOString().slice(0, 10);
+  st.cab[id] = { ...(st.cab[id] || {}), last: iso, uses: 0 };
+  try { localStorage.setItem('jamal.v1', JSON.stringify(st)); }
+  catch { return { ok: false, error: 'Could not save to Jamāl.' }; }
+  return {
+    ok: true, done: true,
+    undo: () => {
+      const s2 = RAW('jamal.v1'); if (!s2) return;
+      s2.cab ||= {};
+      if (before === undefined) delete s2.cab[id]; else s2.cab[id] = before;
+      localStorage.setItem('jamal.v1', JSON.stringify(s2));
+    }
+  };
+}
+
 /* ── Anbīq ─────────────────────────────────────────────────────────
    Its store is a singleton loaded at import. `replace()` re-syncs it from what
    is actually on disk, which is what stops a stale hub tab from clobbering work
@@ -255,6 +278,7 @@ const HANDLERS = {
   'compound.h':    compoundToggle,
   'jamal.ritual':  jamalToggle,
   'jamal.inside':  jamalInside,
+  'jamal.cab':     jamalCab,
   'anbiq.seen':    anbiqDispatchSeen,
   'sakina.prayer': sakinaPrayer,
   'gc.rep':        gcRep,

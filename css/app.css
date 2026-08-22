@@ -517,3 +517,7 @@ body.framed .nav{display:none}
   padding:12px;overflow-x:auto;font-family:var(--mono);font-size:11px;
   line-height:1.55;color:var(--tx-2);margin:0 0 9px;
 }
+
+.tog{display:flex;align-items:center;gap:10px;padding:7px 0;font-size:14px;color:var(--tx-2);cursor:pointer}
+.tog input{width:18px;height:18px;accent-color:var(--tx-2);flex:none}
+.tog input:checked{accent-color:var(--ok)}

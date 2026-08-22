@@ -42,6 +42,14 @@ this origin, so `../compound/` is *the app* — not a copy of it. Which means:
 Deep links carry through: `#/in/jamal~%23%2Frituals` mounts Jamāl at its Rituals page, and
 every "open" in the queue points at the right page of the right app.
 
+**Times and reminders.** Prayer times are computed on the device from your coordinates —
+*Use my location* writes them to `sakina.place`, the same key Sakina reads, so setting it
+once fixes both apps. Reminders fire at each prayer time, at the hour of anything else
+timed, and once in the evening listing what is still open. They fire **only while Dīwān is
+open in a tab** — backgrounded is fine, closed is not. Push needs a server to push from and
+there isn't one; the alternative is sending your day somewhere, which is not worth it for a
+reminder. Sakina reached the same conclusion.
+
 **A side menu moves you between them.** Inside an app, Dīwān's bottom bar is hidden — the
 app has its own and two stacked bars is one too many — so ☰ in the frame bar opens a drawer
 listing Dīwān's own sections and all six apps, each with how many of its rows are still

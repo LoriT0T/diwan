@@ -68,6 +68,19 @@ const unList = (recs, p) => Object.entries(recs)
    nothing. Once there is a single record, creating the storage to hold it is correct. */
 const empty = r => !r || Object.keys(r).length === 0;
 
+/* Anbīq and Āfāq keep their state in a module-level singleton loaded once at import.
+   Writing their localStorage key behind their back leaves that singleton stale, and the
+   next save from it writes the OLD state straight back over what was just merged — so a
+   book added on the phone would vanish the next time anything touched Anbīq here. Both
+   expose `replace()`, which re-seeds the singleton from a given object, so every write
+   to those two is followed by re-seeding them from what is now on disk. */
+async function rehydrate(mod, key) {
+  try {
+    const m = await import(mod);
+    if (typeof m.replace === 'function') m.replace(raw(key) || {});
+  } catch { /* the app is not reachable; its storage is still correct */ }
+}
+
 /* ══════════════════════════════════════════════════════════════════
    COMPOUND — ten localStorage keys under pp:v1:*
    ══════════════════════════════════════════════════════════════════ */
@@ -162,6 +175,7 @@ const anbiq = {
     s.progs = unList(r, 'progs'); s.crucibles = unList(r, 'crucibles');
     s.v = 1;
     put('anbiq.v1', s);
+    return rehydrate('../../anbiq/js/store.js', 'anbiq.v1');
   }
 };
 
@@ -226,6 +240,7 @@ const afaq = {
       s[p] = unList(r, p);
     s.v = 1;
     put('afaq.v1', s);
+    return rehydrate('../../afaq/js/store.js', 'afaq.v1');
   }
 };
 

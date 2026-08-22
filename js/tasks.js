@@ -224,6 +224,58 @@ export async function buildQueue(snap) {
           href: jam.url + '#/rituals'
         });
       }
+
+      /* ── The cabinet ──
+         Thirteen consumables on real clocks — lenses to the day, a pillowcase every
+         four while the skin is a live problem, a razor blade by uses rather than days.
+         None of it was reaching the queue, which is exactly the kind of thing that gets
+         missed: nothing prompts you, and the failure is slow. Only what is due or close
+         is shown, otherwise thirteen rows drown the day. */
+      for (const c of (J.CABINET || [])) {
+        const rec = (st.cab || {})[c.id] || {};
+        let left = null, due = false, why = '';
+        if (c.days) {
+          if (rec.last) {
+            left = c.days - (Math.round((new Date(date + 'T00:00') - new Date(rec.last + 'T00:00')) / 864e5));
+            due = left <= 0;
+            why = `every ${c.days} day${c.days === 1 ? '' : 's'}`;
+          } else {
+            /* Never marked. Do not open a fresh install with thirteen overdue items —
+               the same reason Jamāl's own dueIn refuses a day-one backlog. */
+            continue;
+          }
+        }
+        if (c.uses) {
+          const u = rec.uses || 0;
+          if (u >= c.uses) { due = true; why = `${u} uses`; if (left == null) left = 0; }
+          else if (!c.days) continue;
+        }
+        if (!due && (left == null || left > 3)) continue;      // not near enough to matter
+        out.push({
+          key: 'jamal:cab:' + c.id, app: 'jamal', label: c.name, note: 'Replace · ' + (c.cat || ''),
+          domain: 'cabinet', brief: c.note || '',
+          at: null, slot: 'any', done: false, tier: 'due',
+          left, over: left != null && left < 0, cadence: why,
+          words: [c.name.toLowerCase()],
+          action: canTick ? { kind: 'jamal.cab', id: c.id } : null,
+          href: jam.url + '#/log'
+        });
+      }
+
+      /* ── The daily skin rating ──
+         Five concerns on a 0–4 scale. It needs a number per concern, so it carries you
+         to the app rather than pretending a tick rated anything. It is the input the
+         sparklines and the one honest correlation are both computed from, so a day
+         unrated is a day that page cannot use. */
+      if ((J.CONCERNS || []).length && !(st.sev || {})[date]) {
+        out.push({
+          key: 'jamal:sev', app: 'jamal', label: 'Rate your skin', note: 'Skin',
+          domain: 'severity', brief: `${J.CONCERNS.length} fronts, 0–4 each — this is what the trend is drawn from`,
+          at: null, slot: 'any', done: false, tier: 'due', daily: true,
+          words: ['skin', 'rate', 'rating', 'severity'],
+          action: null, href: jam.url + '#/skin', cta: 'Rate them'
+        });
+      }
       /* Inside metrics: only the toggles. A count wants a real number. */
       const supp = new Set((jam.suppressed || []).map(s => s.label));
       const covered = snap.covered || {};

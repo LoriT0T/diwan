@@ -11,7 +11,8 @@ import * as W from './write.js';
 import * as V from './voice.js';
 import * as C from './cloud.js';
 import * as SY from './sync.js';
-import { buildQueue, BUNDLES, PRAYER_LABEL, place, leftLabel } from './tasks.js';
+import * as N from './remind.js';
+import { buildQueue, BUNDLES, PRAYER_LABEL, place, prayerTimes, leftLabel } from './tasks.js';
 import { TIER_LABEL } from './rank.js';
 
 const $ = (s, r = document) => r.querySelector(s);
@@ -687,6 +688,8 @@ function viewData() {
       so there is no second copy to fall out of date — and it writes back only what you tick.</p>
     </header>
 
+    ${remindSection()}
+
     ${syncSection()}
 
     <div class="sect">
@@ -743,6 +746,7 @@ function viewData() {
     </div>`;
 
   wireSync();
+  wireRemind();
 
   $('#gc-save').onclick = () => {
     const txt = $('#gc-in').value.trim();
@@ -786,6 +790,12 @@ async function runSync(label) {
   syncing = false;
   if (!r.ok) { say(''); toast(r.error, { bad: true }); return r; }
   await refresh();
+  /* An app mounted right now is showing what it read before the merge. Reload the frame
+     so it picks up what just arrived, rather than sitting on a stale view of its own data. */
+  if (r.took || r.removed) {
+    const f = $('iframe.frame');
+    if (f) { try { f.contentWindow.location.reload(); } catch { f.src = f.src; } }
+  }
   const bits = [];
   if (r.took) bits.push(`${r.took} in`);
   if (r.sent) bits.push(`${r.sent} out`);
@@ -915,6 +925,80 @@ function wireSync() {
   }).catch(() => {});
 }
 
+
+function remindSection() {
+  const s = N.settings();
+  const perm = N.permission();
+  const p = place();
+  const times = prayerTimes();
+  const fmt = d => d.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
+
+  return `
+    <div class="sect">
+      <div class="sect-h"><h3>Times and reminders</h3>
+        <span class="aside">${esc(perm === 'granted' && s.on ? 'on' : 'off')}</span></div>
+      <div class="card pad">
+        <p class="small" style="margin:0 0 10px">Prayer times are computed on this device from
+        your coordinates with the same library and settings Sakina uses, so the two cannot
+        disagree. Setting your location here sets it for Sakina too.</p>
+        <div class="app-s" style="margin-bottom:10px">
+          ${times ? Object.entries(times).map(([k, d]) =>
+            `<span class="st"><span class="l">${esc(PRAYER_LABEL[k])}</span>
+              <span class="v">${esc(fmt(d))}</span></span>`).join('') : '<span class="small">Times unavailable.</span>'}
+        </div>
+        <p class="tiny" style="margin:0 0 10px">${esc(p.label)} · ${esc(p.method)} · ${esc(p.madhab)}</p>
+        <div class="btn-row"><button class="btn quiet" id="rm-loc">Use my location</button></div>
+
+        <hr style="border:0;border-top:1px solid var(--line);margin:16px 0">
+
+        <p class="small" style="margin:0 0 10px">A notification when something falls due —
+        each prayer at its time, and anything with an hour on it.</p>
+        ${perm === 'unsupported'
+          ? '<p class="tiny">This browser has no notifications.</p>'
+          : perm === 'denied'
+          ? '<p class="tiny">Notifications are blocked for this site. Allow them in the browser’s site settings, then come back.</p>'
+          : `<label class="tog"><input type="checkbox" id="rm-on" ${s.on && perm === 'granted' ? 'checked' : ''}>
+               <span>Remind me</span></label>
+             <label class="tog"><input type="checkbox" id="rm-pr" ${s.prayers ? 'checked' : ''}>
+               <span>At each prayer time</span></label>
+             <label class="tog"><input type="checkbox" id="rm-ti" ${s.timed ? 'checked' : ''}>
+               <span>At the hour of anything else timed</span></label>
+             <label class="tog"><input type="checkbox" id="rm-sw" ${s.eveningSweep != null ? 'checked' : ''}>
+               <span>One evening sweep of what is still open</span></label>`}
+        <p class="tiny" style="margin-top:11px"><b>They fire only while Dīwān is open in a
+        tab</b> — backgrounded is fine, closed is not. Push needs a server to push from and
+        there isn’t one; the alternative is sending your day somewhere, which is not worth it
+        for a reminder. Add Dīwān to your home screen and it behaves like an app.</p>
+      </div>
+    </div>`;
+}
+
+function wireRemind() {
+  $('#rm-loc') && ($('#rm-loc').onclick = async () => {
+    const b = $('#rm-loc'); b.disabled = true; b.textContent = 'Finding you…';
+    try {
+      const p = await N.locate();
+      toast(`Location set — ${p.label}.`);
+      await refresh();
+    } catch (e) { toast(e.message, { bad: true }); b.disabled = false; b.textContent = 'Use my location'; }
+  });
+
+  const bind = (id, key) => {
+    const el = $(id); if (!el) return;
+    el.onchange = async () => {
+      if (id === '#rm-on' && el.checked && N.permission() !== 'granted') {
+        const got = await N.ask();
+        if (got !== 'granted') { el.checked = false; toast('Notifications were not allowed.', { bad: true }); paint(); return; }
+      }
+      N.save({ [key]: key === 'eveningSweep' ? (el.checked ? 21 : null) : el.checked });
+      if (N.settings().on) N.start(() => Q);
+      toast('Saved.');
+    };
+  };
+  bind('#rm-on', 'on'); bind('#rm-pr', 'prayers');
+  bind('#rm-ti', 'timed'); bind('#rm-sw', 'eveningSweep');
+}
+
 /* ══════════════════════════════════════════════════════════════════
    Router
    ══════════════════════════════════════════════════════════════════ */
@@ -969,6 +1053,7 @@ app.innerHTML = `<header class="masthead"><p class="eyebrow">Reading the apps…
 /* Sync as soon as the page is usable, not before — the queue should paint from what is
    already here rather than waiting on the network, and then quietly correct itself. */
 refresh().then(() => {
+  if (N.settings().on) N.start(() => Q);
   if (C.signedIn()) runSync();
   setInterval(() => { if (C.signedIn() && document.visibilityState === 'visible' && !syncing) runSync(); }, 5 * 60_000);
 }).catch(e => {
