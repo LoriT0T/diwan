@@ -131,7 +131,8 @@ export function buildAgenda(queue, settings) {
     /* A prayer is the one thing that legitimately falls inside quiet hours. */
     if (!prayer && quiet(t.at)) continue;
     rows.push({
-      at: t.at.toISOString(),
+      /* A task can want to be announced at a different moment than it sits at. */
+      at: (t.notifyAt || t.at).toISOString(),
       title: t.label,
       body: prayer ? 'It is time.' : (t.brief || t.note || 'Due now'),
       url: t.startSession ? './#/' : (t.href && t.href.startsWith('http') ? inward(t) : './#/'),

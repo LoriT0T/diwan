@@ -159,12 +159,24 @@ export async function buildQueue(snap) {
         import('../../compound/js/store.js'),
         import('../../compound/js/data.js')
       ]);
+      /* Morning light is "soon after waking" in Compound's own words, so it hangs off
+         the wake time actually logged rather than a fixed hour. On a day with no wake
+         time yet it falls back to the nominal one. */
+      const wokeAt = (() => {
+        const e = S.getHEntry(date, 'wake');
+        const t = e && e.v && e.v.t;
+        if (!t || !/^\d{1,2}:\d{2}$/.test(t)) return null;
+        const [h, m] = t.split(':').map(Number);
+        return h + m / 60;
+      })();
+
       for (const i of H.live()) {
         if (i.dom === 'situ') continue;              // considered, not daily — see the header
         const done = H.satisfied(date, i);
         const daily = i.cad.t === 'd';
         let when = null;
-        if (i.dom === 'sleep') when = at(HOUR[i.id] ?? 9);
+        if (i.id === 'light' && wokeAt != null) when = at(Math.min(wokeAt + 1, 11));
+        else if (i.dom === 'sleep') when = at(HOUR[i.id] ?? 9);
         else if (i.dom === 'fuel' && daily) when = at(HOUR['fuel' + (i.when || 2)] ?? HOUR.fuel2);
         out.push({
           key: 'compound:' + i.id, app: 'compound', label: i.name,
@@ -175,6 +187,10 @@ export async function buildQueue(snap) {
             const c = cadenceNote(i, S);
             return { cadence: c.note, left: c.left, over: c.over, short: c.short, tight: c.tight };
           })()),
+          /* A curfew warned about after it has passed is a reprimand, not a reminder,
+             so the notification lands a quarter of an hour before the cutoff while the
+             row itself stays at the cutoff, where it belongs in the day. */
+          ...(i.id === 'caff' && when ? { notifyAt: new Date(when.getTime() - 15 * 60_000) } : {}),
           words: w(i.id, [i.name.toLowerCase()]),
           action: { kind: 'compound.h', date, id: i.id },
           href: comp.url
@@ -260,7 +276,11 @@ export async function buildQueue(snap) {
           if (u >= c.uses) { due = true; why = `${u} uses`; if (left == null) left = 0; }
           else if (!c.days) continue;
         }
-        if (!due && (left == null || left > 3)) continue;      // not near enough to matter
+        /* Three days is right for a pillowcase and wrong for a haircut — one is a
+           drawer away and the other needs an appointment. Compound's own copy for it
+           is "book before you need it". */
+        const lead = (c.days || 0) >= 30 ? 7 : 3;
+        if (!due && (left == null || left > lead)) continue;
         out.push({
           key: 'jamal:cab:' + c.id, app: 'jamal', label: c.name, note: 'Replace · ' + (c.cat || ''),
           domain: 'cabinet', brief: c.note || '',
