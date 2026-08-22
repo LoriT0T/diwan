@@ -180,9 +180,12 @@ export async function buildQueue(snap) {
         const n = s ? Object.values(s.sets || {}).flat().filter(r => r && r.done).length : 0;
         out.push({
           key: 'compound:workout', app: 'compound', label: `${dayId} — today's session`,
-          note: 'Workout', domain: 'workout', brief: n ? `${n} sets logged` : 'Weights and reps go in the app',
+          note: 'Workout', domain: 'workout', brief: n ? `${n} sets logged` : 'Sets, reps, RIR and the rest timer — right here',
           at: at(HOUR.workout), done: n > 0, tier: 'due',
           words: ['workout', 'session', 'gym', 'trained', 'lifted', 'training'],
+          /* Not a tick and not a link — a workout opens the live panel, which is the
+             one place per-set entry and a wall-clock rest timer can actually live. */
+          startSession: dayId,
           action: null, href: comp.url
         });
       }

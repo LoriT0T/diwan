@@ -24,7 +24,13 @@ const DEFAULTS = {
   on: false,
   prayers: true,      // at each computed prayer time
   timed: true,        // wake, light, supplements, rituals — anything with an hour
-  eveningSweep: 21    // one nudge listing whatever is still open, or null
+  eveningSweep: 21,   // one nudge listing whatever is still open, or null
+  session: true,      // rest finished — the one that reaches you mid-set
+  quietFrom: 22,      // nothing after this hour…
+  quietTo: 6,         // …until this one. A prayer is the exception; it is the one
+                      // thing that legitimately falls at 06:17.
+  maxPerHour: 6       // six apps each with a good reason to interrupt you is how a
+                      // notification layer gets muted permanently
 };
 
 export const settings = () => ({ ...DEFAULTS, ...(read(KEY) || {}) });
@@ -53,10 +59,70 @@ function markFired(id) {
   write(FIRED, kept);
 }
 
-function show(title, body, tag) {
+/* Quiet hours and a ceiling, applied to everything except the two kinds that are
+   worth waking for: a prayer at its time, and a rest timer you are standing over. */
+const RATE = 'diwan.remind.rate';
+
+function inQuiet(now = new Date()) {
+  const s = settings(), h = now.getHours();
+  if (s.quietFrom == null || s.quietTo == null) return false;
+  return s.quietFrom > s.quietTo ? (h >= s.quietFrom || h < s.quietTo)
+                                 : (h >= s.quietFrom && h < s.quietTo);
+}
+function underRate() {
+  const cut = Date.now() - 3600e3;
+  let hits = [];
+  try { hits = (JSON.parse(localStorage.getItem(RATE) || '[]')).filter(t => t > cut); } catch { hits = []; }
+  return { ok: hits.length < settings().maxPerHour, hits };
+}
+function noteRate(hits) {
+  try { localStorage.setItem(RATE, JSON.stringify([...hits, Date.now()])); } catch { /* full */ }
+}
+
+function show(title, body, tag, { urgent = false } = {}) {
   if (permission() !== 'granted') return false;
-  try { new Notification(title, { body, tag, silent: false }); return true; }
-  catch { return false; }   // some browsers only allow this from a service worker
+  if (!urgent) {
+    if (inQuiet()) return false;
+    const r = underRate();
+    if (!r.ok) return false;
+    noteRate(r.hits);
+  }
+  try {
+    new Notification(title, { body, tag, silent: false, renotify: true });
+    return true;
+  } catch { return false; }   // some browsers only allow this from a service worker
+}
+
+/**
+ * Fire one now. Used by the session, where the moment is the whole point — a rest
+ * timer that respects a rate limit is a rest timer that lies to you, so it is urgent.
+ */
+export function fire(title, body, tag) {
+  if (!settings().on) return false;
+  return show(title, body, tag || 'diwan', { urgent: tag === 'rest' });
+}
+
+/**
+ * Fire in `seconds`. A backgrounded tab throttles setTimeout, so this is a best
+ * effort backed by the minute tick and by the visibility check — late by a second
+ * is fine, and the session panel is authoritative either way.
+ */
+const pending = new Map();
+export function schedule(seconds, title, body, tag = 'rest') {
+  clearTimeout(pending.get(tag));
+  pending.set(tag, setTimeout(() => { pending.delete(tag); fire(title, body, tag); }, seconds * 1000));
+}
+export function unschedule(tag = 'rest') { clearTimeout(pending.get(tag)); pending.delete(tag); }
+
+/**
+ * The count on the app icon. Home-screen web apps on iOS support this, so the day's
+ * shape is glanceable without opening anything.
+ */
+export function badge(n) {
+  try {
+    if (!navigator.setAppBadge) return;
+    if (n > 0) navigator.setAppBadge(n); else navigator.clearAppBadge?.();
+  } catch { /* not installed, or unsupported */ }
 }
 
 /**
@@ -83,7 +149,8 @@ export function tick(getQueue) {
     const id = `${t.key}:${today}`;
     if (alreadyFired(id)) continue;
     markFired(id);
-    show(t.label, t.domain === 'prayer' ? 'It is time.' : (t.note || 'Due now'), id);
+    show(t.label, t.domain === 'prayer' ? 'It is time.' : (t.note || 'Due now'), id,
+         { urgent: t.domain === 'prayer' });
   }
 
   /* One evening sweep of what is still open, rather than a notification per row. */

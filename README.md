@@ -42,6 +42,32 @@ this origin, so `../compound/` is *the app* — not a copy of it. Which means:
 Deep links carry through: `#/in/jamal~%23%2Frituals` mounts Jamāl at its Rituals page, and
 every "open" in the queue points at the right page of the right app.
 
+## The live session
+
+Starting a workout opens a panel built for having your hands full: the current exercise
+with its cue, last time's numbers, per-set weight / reps / RIR, and a rest countdown large
+enough to read at arm's length. A bar rides above the nav on every other view, so you can
+be in Sakina and still see which set you are on.
+
+**The rest timer is wall-clock, and that is a fix rather than a preference.** Compound's
+own timer runs on `requestAnimationFrame`, which the browser pauses in a backgrounded tab —
+put the phone in your pocket between sets and the countdown freezes, then resumes from
+where it stopped instead of from where the clock is. Everything here derives from a stored
+end time, so three minutes in a pocket is three minutes. Verified by rewinding the end time
+45 seconds and confirming 45 seconds had gone.
+
+Every set writes through Compound's own session store — one source of truth, the same rule
+as every other tick — and the advance logic matches its own: an A-half goes straight into
+its superset partner with no rest, a B-half rests then returns to the partner for the next
+round.
+
+**What it cannot do, and why.** iOS has no notification action buttons — MDN records
+`actions` as unsupported on Safari and Safari iOS — and no lock-screen text entry. So there
+is no "log this set" button on the notification, and there never can be on the web. Live
+Activities and the Dynamic Island are native-only. The notification is a doorway; the panel
+is the room. The full design, including what a native client would add, is written up
+separately.
+
 **Times and reminders.** Prayer times are computed on the device from your coordinates —
 *Use my location* writes them to `sakina.place`, the same key Sakina reads, so setting it
 once fixes both apps. Reminders fire at each prayer time, at the hour of anything else

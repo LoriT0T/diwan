@@ -12,6 +12,7 @@ import * as V from './voice.js';
 import * as C from './cloud.js';
 import * as SY from './sync.js';
 import * as N from './remind.js';
+import * as SS from './session.js';
 import { buildQueue, BUNDLES, PRAYER_LABEL, place, prayerTimes, leftLabel } from './tasks.js';
 import { TIER_LABEL } from './rank.js';
 
@@ -177,7 +178,8 @@ function headCard(t) {
     <h2>${esc(t.label)}</h2>
     ${t.brief ? `<p>${esc(t.brief)}</p>` : ''}
     <div class="act-btns">
-      ${t.action ? `<button class="go" data-tick="${esc(t.key)}">Done <span class="arr">✓</span></button>` : ''}
+      ${t.startSession ? `<button class="go" data-start="${esc(t.startSession)}">Start the session <span class="arr">→</span></button>`
+        : t.action ? `<button class="go" data-tick="${esc(t.key)}">Done <span class="arr">✓</span></button>` : ''}
       ${t.alt ? `<button class="btn alt" data-alt="${esc(t.key)}">${esc(t.alt.label)}</button>` : ''}
       <a class="btn quiet" href="${esc(inward(t.href, t.app))}">${esc(t.cta || 'Open ' + (APP_NAME[t.app] || ''))} →</a>
     </div>
@@ -198,7 +200,9 @@ function row(t) {
   const time = t.at ? hhmm(t.at) : (countdown || (t.mins ? `${t.mins}m` : ''));
   const urgent = !t.at && !t.daily && (t.over || t.tight || (t.left != null && t.left <= 0));
   return `<div class="trow${t.isNote ? ' note-row' : ''}" style="--hue:${HUE(t.app)}" data-key="${esc(t.key)}">
-    ${t.action
+    ${t.startSession
+      ? `<button class="tick play" data-start="${esc(t.startSession)}" aria-label="Start ${esc(t.label)}">▶</button>`
+      : t.action
       ? `<button class="tick" data-tick="${esc(t.key)}" aria-label="Mark ${esc(t.label)} done"></button>`
       : `<a class="tick link" href="${esc(inward(t.href, t.app))}" aria-label="Open ${esc(t.label)}">→</a>`}
     <span class="t-when${urgent ? ' urgent' : ''}">${esc(time)}</span>
@@ -230,6 +234,14 @@ function doneBlock(done) {
 function findTask(key) { return Q.all.find(t => t.key === key) || Q.done.find(t => t.key === key); }
 
 function wireRows() {
+  document.querySelectorAll('[data-start]').forEach(b => {
+    b.onclick = async e => {
+      e.preventDefault();
+      const r = await SS.start(b.dataset.start);
+      if (!r.ok) { toast(r.error, { bad: true }); return; }
+      await paintSession(); openPanel();
+    };
+  });
   document.querySelectorAll('[data-tick]').forEach(b => {
     b.onclick = async e => {
       e.preventDefault();
@@ -999,6 +1011,184 @@ function wireRemind() {
   bind('#rm-ti', 'timed'); bind('#rm-sw', 'eveningSweep');
 }
 
+
+/* ══════════════════════════════════════════════════════════════════
+   THE LIVE SESSION
+
+   Everything a workout needs while your hands are full, in the one place the
+   platform allows it to be rich. iOS notifications have no buttons and no text
+   entry, so the lock screen can only ever be a doorway; this is the room.
+
+   The bar rides above the nav on every view — you can be in Sakina and still see
+   which set you are on. Tapping it opens the panel.
+   ══════════════════════════════════════════════════════════════════ */
+let sessTimer = null;
+let restFired = new Set();
+
+const mmss = s => { s = Math.max(0, Math.round(s)); return Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0'); };
+
+async function paintSession() {
+  const bar = $('#sessbar'), panel = $('#sesspanel');
+  const v = await SS.view();
+
+  if (!v) {
+    bar.hidden = true; panel.hidden = true;
+    document.body.classList.remove('has-sess');
+    if (sessTimer) { clearInterval(sessTimer); sessTimer = null; }
+    return;
+  }
+
+  /* One second tick while a session is live. Everything it shows is derived from a
+     stored end time, so a tick that is late or skipped entirely changes nothing. */
+  if (!sessTimer) sessTimer = setInterval(tickSession, 1000);
+
+  const r = v.rest;
+  const ex = v.exercises[v.ex] || v.exercises[0];
+  bar.hidden = false;
+  document.body.classList.add('has-sess');
+  bar.innerHTML = `
+    <button class="sb-main" id="sb-open">
+      <span class="sb-l">
+        <span class="sb-n">${esc(ex ? ex.name : v.name)}</span>
+        <span class="sb-s">${v.doneN}/${v.total} sets · ${esc(v.name)}</span>
+      </span>
+      ${r ? `<span class="sb-rest${r.over ? ' over' : ''}">
+               <b>${r.over ? 'GO' : esc(mmss(r.left))}</b>
+               <i style="width:${r.over ? 100 : Math.max(0, 100 - (r.left / Math.max(1, r.total)) * 100)}%"></i>
+             </span>`
+          : `<span class="sb-go">Open</span>`}
+    </button>`;
+  $('#sb-open').onclick = () => openPanel();
+
+  if (!panel.hidden) renderPanel(v);
+}
+
+function tickSession() {
+  const r = SS.rest();
+  const bar = $('#sessbar');
+  if (r && bar && !bar.hidden) {
+    const el = bar.querySelector('.sb-rest');
+    if (el) {
+      el.classList.toggle('over', r.over);
+      el.querySelector('b').textContent = r.over ? 'GO' : mmss(r.left);
+      el.querySelector('i').style.width =
+        (r.over ? 100 : Math.max(0, 100 - (r.left / Math.max(1, r.total)) * 100)) + '%';
+    }
+    /* Fire once, when it crosses zero. The notification is the point — it is what
+       reaches you with the phone face-down on a bench. */
+    const stamp = String(SS.live()?.restEndsAt || 0);
+    if (r.over && !restFired.has(stamp)) {
+      restFired.add(stamp);
+      N.fire('Rest done', r.label || 'Next set', 'rest');
+      try { if (navigator.vibrate) navigator.vibrate([120, 70, 120, 70, 220]); } catch {}
+    }
+  }
+  const p = $('#sesspanel');
+  if (p && !p.hidden) {
+    const cd = p.querySelector('#sp-cd');
+    if (cd && r) { cd.textContent = r.over ? 'Go' : mmss(r.left); cd.classList.toggle('over', r.over); }
+    const el = p.querySelector('#sp-el');
+    if (el) { const v = SS.live(); if (v?.at) el.textContent = mmss((Date.now() - v.at) / 1000); }
+  }
+}
+
+async function openPanel() { $('#sesspanel').hidden = false; renderPanel(await SS.view()); }
+function closePanel() { $('#sesspanel').hidden = true; }
+
+function renderPanel(v) {
+  if (!v) return;
+  const panel = $('#sesspanel');
+  const r = v.rest;
+  const ex = v.exercises[v.ex] || v.exercises[0];
+  const u = v.unit;
+
+  const last = ex && ex.lastTime
+    ? ex.lastTime.sets.map(s => `${s.w}×${s.reps}`).join('  ') : null;
+
+  panel.innerHTML = `
+    <div class="sp-wrap">
+      <div class="sp-top">
+        <button class="sp-x" id="sp-close" aria-label="Back">▾</button>
+        <span class="sp-name">${esc(v.name)}</span>
+        <span class="sp-el" id="sp-el">${esc(mmss(v.elapsed / 1000))}</span>
+      </div>
+
+      ${r ? `<div class="sp-rest${r.over ? ' over' : ''}">
+          <div class="sp-cd" id="sp-cd">${r.over ? 'Go' : esc(mmss(r.left))}</div>
+          <div class="sp-next">${esc(r.label || 'Rest')}</div>
+          <div class="sp-rb"><button class="btn btn-mini" id="sp-add">+30s</button>
+            <button class="btn btn-mini" id="sp-skip">Skip</button></div>
+        </div>` : ''}
+
+      <div class="sp-body">
+        ${v.exercises.map(e => `
+          <div class="sp-ex${e.i === v.ex ? ' on' : ''}${e.done ? ' done' : ''}" data-ex="${e.i}">
+            <div class="sp-eh">
+              <span class="sp-en">${esc(e.name)}</span>
+              <span class="sp-ec">${e.sets.filter(s => s.done).length}/${e.sets.length}</span>
+            </div>
+            ${e.i === v.ex ? `
+              ${e.cue ? `<p class="sp-cue">${esc(e.cue)}</p>` : ''}
+              ${last ? `<p class="sp-last">Last time — ${esc(last)}</p>` : '<p class="sp-last">First time. Record the weight.</p>'}
+              ${e.supersetInto ? `<p class="sp-last">Superset into ${esc(e.supersetInto)} — no rest between.</p>` : ''}
+              <div class="sp-sets">
+                ${e.sets.map(s => `
+                  <div class="sp-set${s.done ? ' done' : ''}">
+                    <button class="tick${s.done ? ' on' : ''}" data-set="${e.id}|${s.i}"
+                      aria-label="Set ${s.i + 1}">${s.done ? '✓' : s.i + 1}</button>
+                    <span class="sp-t">${esc(String(s.target || ''))}${s.rir != null ? ` · RIR ${s.rir}` : ''}</span>
+                    <input class="sp-in" type="number" inputmode="decimal" step="0.5" placeholder="${esc(u)}"
+                      value="${s.w ?? ''}" data-f="w" data-k="${e.id}|${s.i}">
+                    <input class="sp-in" type="number" inputmode="numeric" placeholder="reps"
+                      value="${s.reps ?? ''}" data-f="reps" data-k="${e.id}|${s.i}">
+                    <input class="sp-in narrow" type="number" inputmode="numeric" placeholder="rir"
+                      value="${s.rir ?? ''}" data-f="rir" data-k="${e.id}|${s.i}">
+                  </div>`).join('')}
+              </div>
+              <div class="btn-row"><button class="btn quiet btn-mini" data-add="${e.id}">Add a set</button></div>
+            ` : ''}
+          </div>`).join('')}
+      </div>
+
+      <div class="sp-foot">
+        <span class="sp-vol">${v.doneN}/${v.total} sets · ${Math.round(v.volume).toLocaleString()} ${esc(u)} volume</span>
+        <button class="btn" id="sp-finish">Finish</button>
+      </div>
+    </div>`;
+
+  $('#sp-close').onclick = closePanel;
+  $('#sp-add') && ($('#sp-add').onclick = () => { SS.addRest(30); paintSession(); });
+  $('#sp-skip') && ($('#sp-skip').onclick = () => { SS.stopRest(); paintSession(); });
+  $('#sp-finish').onclick = async () => {
+    await SS.finish(); closePanel(); toast('Session finished.'); await refresh();
+  };
+  panel.querySelectorAll('.sp-ex').forEach(el => {
+    el.addEventListener('click', e => {
+      if (e.target.closest('button, input')) return;
+      SS.focus(+el.dataset.ex, 0); paintSession();
+    });
+  });
+  panel.querySelectorAll('[data-set]').forEach(b => {
+    b.onclick = async () => {
+      const [id, i] = b.dataset.set.split('|');
+      const r = await SS.toggleSet(id, +i);
+      restFired.clear();
+      if (r.rest) N.schedule(r.rest, 'Rest done', r.label || 'Next set');
+      await paintSession();
+    };
+  });
+  panel.querySelectorAll('[data-add]').forEach(b => {
+    b.onclick = async () => { await SS.addSet(b.dataset.add); await paintSession(); };
+  });
+  panel.querySelectorAll('.sp-in').forEach(inp => {
+    inp.onchange = async () => {
+      const [id, i] = inp.dataset.k.split('|');
+      const val = inp.value === '' ? null : Number(inp.value);
+      await SS.setFields(id, +i, { [inp.dataset.f]: val });
+    };
+  });
+}
+
 /* ══════════════════════════════════════════════════════════════════
    Router
    ══════════════════════════════════════════════════════════════════ */
@@ -1017,12 +1207,15 @@ function paint() {
   document.querySelectorAll('.nav a').forEach(a => a.classList.toggle('on', a.dataset.nav === nav));
   const mb = $('#menu');
   if (mb) { mb.hidden = false; mb.onclick = openDrawer; }
+  paintSession();
   window.scrollTo(0, 0);
 }
 
 async function refresh() {
   SNAP = await R.readAll();
   Q = await buildQueue(SNAP);
+  /* The day's shape on the app icon, glanceable with nothing open. */
+  N.badge(Q.all.filter(t => !t.done && !t.isNote).length);
   paint();
 }
 
