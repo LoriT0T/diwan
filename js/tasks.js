@@ -72,6 +72,13 @@ export function prayerTimes(date = new Date()) {
   } catch { return null; }
 }
 
+/* Read once per build rather than imported, so tasks.js keeps no dependency on the
+   reminder module. */
+const firmSakina = () => {
+  try { return (JSON.parse(localStorage.getItem('diwan.remind') || '{}')).sakinaFirm !== false; }
+  catch { return true; }
+};
+
 export const PRAYER_LABEL = { fajr: 'Fajr', dhuhr: 'Dhuhr', asr: 'ʿAsr', maghrib: 'Maghrib', isha: 'ʿIshāʾ' };
 const PRAYER_ORDER = ['fajr', 'dhuhr', 'asr', 'maghrib', 'isha'];
 
@@ -315,6 +322,12 @@ export async function buildQueue(snap) {
           domain: 'prayer', at: times[p], done: state !== 'none', state,
           tier: 'prayer', prayer: p,
           brief: canTick ? '' : 'Open Sakina once and these become tickable here',
+          /* Firm mode surfaces a passed, unmarked prayer as outstanding. Sakina itself
+             would not: its rule is that a gap is never turned into a failure. This is a
+             deliberate override, kept behind a setting so it can be undone. */
+          ...(firmSakina() && times[p].getTime() < Date.now() && state === 'none'
+              ? { over: true, left: -Math.floor((Date.now() - times[p].getTime()) / 6e4) }
+              : {}),
           words: w(p),
           action: canTick ? { kind: 'sakina.prayer', date, prayer: p, state: 'prayed' } : null,
           alt: canTick ? { label: 'jamāʿah', action: { kind: 'sakina.prayer', date, prayer: p, state: 'jamaah' } } : null,

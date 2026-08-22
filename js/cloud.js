@@ -206,6 +206,45 @@ export async function push(rows) {
   return rows.length;
 }
 
+/* ---------- generic table access ----------
+   Used by push for its own two tables. RLS means these can only ever touch rows
+   belonging to the signed-in account, so there is nothing to scope by hand. */
+
+export async function upsert(table, rows, onConflict) {
+  if (!rows || !rows.length) return 0;
+  const q = onConflict ? '?on_conflict=' + encodeURIComponent(onConflict) : '';
+  const BATCH = 400;
+  for (let i = 0; i < rows.length; i += BATCH) {
+    await call(`/rest/v1/${table}${q}`, {
+      method: 'POST',
+      headers: { Prefer: 'resolution=merge-duplicates,return=minimal' },
+      body: rows.slice(i, i + BATCH)
+    });
+  }
+  return rows.length;
+}
+
+export async function del(table, col, val) {
+  await call(`/rest/v1/${table}?${col}=eq.${encodeURIComponent(val)}`,
+    { method: 'DELETE', headers: { Prefer: 'return=minimal' } });
+}
+
+/** Empty a table of this account's rows. `user_id=not.is.null` matches everything
+    RLS already limits us to, which is exactly our own. */
+export async function clear(table) {
+  await call(`/rest/v1/${table}?user_id=not.is.null`,
+    { method: 'DELETE', headers: { Prefer: 'return=minimal' } });
+}
+
+export async function count(table) {
+  const c = config(); const t = await validToken();
+  const res = await fetch(`${c.url}/rest/v1/${table}?select=*&limit=1`, {
+    headers: { apikey: c.anon, Authorization: `Bearer ${t}`, Prefer: 'count=exact' }
+  });
+  const range = res.headers.get('content-range') || '';
+  return Number(range.split('/')[1] || 0) || 0;
+}
+
 /** Row count and newest timestamp, for the status line. */
 export async function stat() {
   const c = config();

@@ -11,13 +11,13 @@
  * straight from the network. So an app whose worker has never run is simply unreadable
  * offline, and read.js reports that rather than pretending.
  */
-const CACHE = 'diwan-v7';
+const CACHE = 'diwan-v9';
 const ASSETS = [
   './', './index.html', './manifest.webmanifest',
   './css/app.css',
   './js/app.js', './js/read.js', './js/rank.js', './js/store.js',
   './js/tasks.js', './js/write.js', './js/voice.js',
-  './js/cloud.js', './js/shred.js', './js/sync.js', './js/remind.js', './js/session.js',
+  './js/cloud.js', './js/shred.js', './js/sync.js', './js/remind.js', './js/session.js', './js/push.js',
   './vendor/adhan.esm.min.js',
   './icon.svg', './icon-180.png', './icon-192.png', './icon-512.png'
 ];
@@ -58,5 +58,53 @@ self.addEventListener('fetch', e => {
       return (await caches.match(request.mode === 'navigate' ? './index.html' : request))
         || (await caches.match('./index.html'));
     }
+  })());
+});
+
+/* ══════════════════════════════════════════════════════════════════
+   PUSH
+
+   The only part of Dīwān that runs when nothing is open. On iOS this works at all
+   only for a web app added to the Home Screen — in a Safari tab, never — and there
+   are no action buttons available, so the notification's whole job is to say the
+   thing and land you in the right place when tapped.
+   ══════════════════════════════════════════════════════════════════ */
+
+self.addEventListener('push', e => {
+  let d = {};
+  try { d = e.data ? e.data.json() : {}; } catch { d = { title: e.data && e.data.text() }; }
+  const title = d.title || 'Dīwān';
+  e.waitUntil((async () => {
+    await self.registration.showNotification(title, {
+      body: d.body || '',
+      tag: d.tag || 'diwan',
+      renotify: d.renotify !== false,
+      data: { url: d.url || './' },
+      icon: './icon-192.png',
+      badge: './icon-192.png'
+    });
+    /* The count on the app icon, which iOS honours for installed web apps. */
+    if (typeof d.badge === 'number' && self.registration.navigationPreload !== undefined) {
+      try { if (navigator.setAppBadge) d.badge > 0 ? navigator.setAppBadge(d.badge) : navigator.clearAppBadge(); }
+      catch { /* not installed */ }
+    }
+  })());
+});
+
+/* Tapping focuses an open Dīwān and routes it, rather than opening a second copy —
+   a notification that spawns duplicate tabs is worse than one that does nothing. */
+self.addEventListener('notificationclick', e => {
+  e.notification.close();
+  const target = (e.notification.data && e.notification.data.url) || './';
+  e.waitUntil((async () => {
+    const all = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
+    for (const c of all) {
+      if (c.url.includes('/diwan/')) {
+        await c.focus();
+        try { c.postMessage({ type: 'navigate', url: target }); } catch { /* older client */ }
+        return;
+      }
+    }
+    await self.clients.openWindow(new URL(target, self.location.href).href);
   })());
 });

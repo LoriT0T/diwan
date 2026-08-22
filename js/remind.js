@@ -29,8 +29,17 @@ const DEFAULTS = {
   quietFrom: 22,      // nothing after this hour…
   quietTo: 6,         // …until this one. A prayer is the exception; it is the one
                       // thing that legitimately falls at 06:17.
-  maxPerHour: 6       // six apps each with a good reason to interrupt you is how a
+  maxPerHour: 6,      // six apps each with a good reason to interrupt you is how a
                       // notification layer gets muted permanently
+
+  /* Sakina is built on a stated rule — no streaks, no scores, nothing that turns a gap
+     into a failure — and this switch overrides it. Musaed asked for it explicitly on
+     2026-08-22 after the conflict was put to him, so it ships on rather than off. It is
+     a setting and not a hard-coded choice precisely so the decision stays reversible
+     without a deploy. Off: prayers and mood are shown as state and never chased.
+     On: an unmarked prayer is followed up and reads as outstanding. */
+  sakinaFirm: true,
+  followUpMins: 25    // how long after a prayer time before it is chased
 };
 
 export const settings = () => ({ ...DEFAULTS, ...(read(KEY) || {}) });
@@ -151,6 +160,21 @@ export function tick(getQueue) {
     markFired(id);
     show(t.label, t.domain === 'prayer' ? 'It is time.' : (t.note || 'Due now'), id,
          { urgent: t.domain === 'prayer' });
+  }
+
+  /* Firm mode: chase a prayer still unmarked a while after its time. Off by default in
+     spirit, on by choice here — see `sakinaFirm`. */
+  if (s.sakinaFirm) {
+    for (const t of open) {
+      if (t.domain !== 'prayer' || !t.at || !s.prayers) continue;
+      const age = now - t.at.getTime();
+      const w = s.followUpMins * 60_000;
+      if (age < w || age > w + 2 * 60_000) continue;
+      const id = `${t.key}:followup:${today}`;
+      if (alreadyFired(id)) continue;
+      markFired(id);
+      show(t.label, 'Still unmarked.', id, { urgent: true });
+    }
   }
 
   /* One evening sweep of what is still open, rather than a notification per row. */

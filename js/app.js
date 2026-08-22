@@ -13,6 +13,7 @@ import * as C from './cloud.js';
 import * as SY from './sync.js';
 import * as N from './remind.js';
 import * as SS from './session.js';
+import * as P from './push.js';
 import { buildQueue, BUNDLES, PRAYER_LABEL, place, prayerTimes, leftLabel } from './tasks.js';
 import { TIER_LABEL } from './rank.js';
 
@@ -702,6 +703,8 @@ function viewData() {
 
     ${remindSection()}
 
+    ${pushSection()}
+
     ${syncSection()}
 
     <div class="sect">
@@ -759,6 +762,7 @@ function viewData() {
 
   wireSync();
   wireRemind();
+  wirePush();
 
   $('#gc-save').onclick = () => {
     const txt = $('#gc-in').value.trim();
@@ -1189,6 +1193,79 @@ function renderPanel(v) {
   });
 }
 
+
+function pushSection() {
+  const why = P.blocker();
+  const ios = P.isIOS(), inst = P.installed();
+  return `
+    <div class="sect">
+      <div class="sect-h"><h3>Push to this phone</h3>
+        <span class="aside" id="pu-state">checking…</span></div>
+      <div class="card pad">
+        <p class="small" style="margin:0 0 11px">Reminders that arrive with Dīwān closed and
+        the phone asleep. Everything else on this page only fires while a tab is open.</p>
+        ${ios && !inst ? `
+          <div class="note" style="margin-bottom:12px"><b>Add Dīwān to your Home Screen first.</b>
+          On iOS push reaches an installed web app and never a Safari tab — this is Apple's
+          rule, not a setting. Share → Add to Home Screen, open Dīwān from the icon, then come
+          back to this page.</div>` : ''}
+        ${why && !(ios && !inst) ? `<p class="tiny" style="margin:0 0 11px">${esc(why)}</p>` : ''}
+        <div class="btn-row">
+          <button class="btn" id="pu-on"${why ? ' disabled' : ''}>Turn on push</button>
+          <button class="btn quiet" id="pu-off" hidden>Turn it off</button>
+          <button class="btn quiet" id="pu-test" hidden>Send a test</button>
+        </div>
+        <p class="tiny" id="pu-note" style="margin-top:11px"></p>
+        <details class="sql" style="margin-top:12px"><summary>The SQL push needs</summary>
+          <pre>${esc(P.PUSH_SQL)}</pre>
+          <button class="btn quiet" id="pu-sql">Copy it</button></details>
+      </div>
+    </div>`;
+}
+
+async function wirePush() {
+  const st = $('#pu-state'), note = $('#pu-note');
+  const on = await P.subscribed().catch(() => false);
+  if (st) st.textContent = on ? 'on' : (P.blocker() ? 'not available' : 'off');
+  $('#pu-off') && ($('#pu-off').hidden = !on);
+  $('#pu-test') && ($('#pu-test').hidden = !on);
+  $('#pu-on') && ($('#pu-on').hidden = on);
+
+  $('#pu-sql') && ($('#pu-sql').onclick = async () => {
+    try { await navigator.clipboard.writeText(P.PUSH_SQL); toast('SQL copied.'); }
+    catch { toast('Select it and copy by hand.', { bad: true }); }
+  });
+  $('#pu-on') && ($('#pu-on').onclick = async () => {
+    const b = $('#pu-on'); b.disabled = true; b.textContent = 'Subscribing…';
+    try {
+      await P.subscribe();
+      await syncAgenda();
+      toast('Push is on for this device.');
+      paint();
+    } catch (e) { note.textContent = e.message; b.disabled = false; b.textContent = 'Turn on push'; }
+  });
+  $('#pu-off') && ($('#pu-off').onclick = async () => {
+    await P.unsubscribe(); toast('Push off for this device.'); paint();
+  });
+  $('#pu-test') && ($('#pu-test').onclick = async () => {
+    /* A row one minute out proves the whole chain — agenda, cron, function, VAPID,
+       encryption, Apple — rather than only the browser half. */
+    const at = new Date(Date.now() + 60_000).toISOString();
+    try {
+      await C.upsert('agenda', [{ at, title: 'Dīwān', body: 'Push is working.', url: './#/', tag: 'test' }], 'user_id,tag,at');
+      note.textContent = 'Queued for one minute from now. If it does not arrive, the Edge Function or its cron is not running yet.';
+    } catch (e) { note.textContent = e.message; }
+  });
+}
+
+/** Replace the stored agenda with the current day's. Cheap, so it runs on every read. */
+async function syncAgenda() {
+  if (!C.signedIn() || !Q) return;
+  if (!(await P.subscribed().catch(() => false))) return;
+  try { await P.pushAgenda(P.buildAgenda(Q, N.settings())); }
+  catch (e) { console.warn('agenda upload failed', e.message); }
+}
+
 /* ══════════════════════════════════════════════════════════════════
    Router
    ══════════════════════════════════════════════════════════════════ */
@@ -1217,7 +1294,16 @@ async function refresh() {
   /* The day's shape on the app icon, glanceable with nothing open. */
   N.badge(Q.all.filter(t => !t.done && !t.isNote).length);
   paint();
+  syncAgenda();
 }
+
+/* The service worker asks an open window to route rather than opening a second copy. */
+navigator.serviceWorker?.addEventListener('message', e => {
+  if (e.data && e.data.type === 'navigate' && e.data.url) {
+    const h = String(e.data.url).replace(/^\.\//, '');
+    location.hash = h.startsWith('#') ? h : '#/';
+  }
+});
 
 window.addEventListener('hashchange', () => {
   const nowFramed = /^#\/in\//.test(location.hash);
