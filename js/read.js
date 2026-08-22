@@ -19,18 +19,20 @@
  *      a database that is not there — each returns a report saying so. One broken app
  *      must never take the hub down with it.
  *
- * Good Company is the exception to all of this: it lives on onrender.com, a different
- * origin, and cannot be read from here at any price. It arrives as a pasted export and
- * is always shown with its age.
+ * Charisma Gym (formerly Good Company) moved onto this origin on 2026-08-22 and is now
+ * read live like the rest. Its Render service still exists, but only as the voice
+ * backend — the UI and all of its storage now sit at lorit0t.github.io/charisma-gym/.
+ * The pasted-snapshot path is kept as a fallback for a device that has the export but
+ * has never opened the app here.
  */
 
 import * as D from './store.js';
 
-/* ---------- dates: local, matching four of the five apps ----------
-   Good Company derives its day key in UTC, which shifts anything logged between
-   midnight and 01:00 BST onto the previous day. This hub reads its raw `at`
-   timestamps rather than its `day` labels, so the numbers here are right even
-   while that is still true over there. */
+/* ---------- dates: local, matching every app ----------
+   Charisma Gym used to derive its day key in UTC, which shifted anything logged
+   between midnight and 01:00 BST onto the previous day; that was fixed at the
+   source on 2026-08-22. This hub still reads raw `at` timestamps rather than
+   `day` labels, which is correct regardless and survives any future drift. */
 export const iso = (d = new Date()) =>
   new Date(d.getTime() - d.getTimezoneOffset() * 6e4).toISOString().slice(0, 10);
 export const shift = (k, n) => iso(new Date(new Date(k + 'T00:00').getTime() + n * 864e5));
@@ -55,7 +57,7 @@ const APPS = {
   jamal:    { name: 'Jamāl',       arabic: 'جمال',    tag: 'Grooming · skin · fit · scent',      url: 'https://lorit0t.github.io/jamal/' },
   anbiq:    { name: 'Anbīq',       arabic: 'الأنبيق', tag: 'Reading · claims · predictions',     url: 'https://lorit0t.github.io/anbiq/' },
   sakina:   { name: 'Sakina',      arabic: 'سكينة',   tag: 'Prayer · meditation · mood',         url: 'https://lorit0t.github.io/sakina/' },
-  gc:       { name: 'Good Company', arabic: '',       tag: 'Charisma · social skill',            url: 'https://good-company.onrender.com/' }
+  gc:       { name: 'Charisma Gym', arabic: '',       tag: 'Charisma · social skill',            url: 'https://lorit0t.github.io/charisma-gym/' }
 };
 
 function blank(id) {
@@ -496,13 +498,27 @@ async function readSakina() {
   return R;
 }
 
+/* Charisma Gym's own store keys, newest first. Read-only, like everything here. */
+const GC_KEYS = ['charismagym.v1', 'goodcompany.v2', 'goodcompany.v1'];
+
+function gcLive() {
+  for (const k of GC_KEYS) {
+    try {
+      const raw = localStorage.getItem(k);
+      if (!raw) continue;
+      const d = JSON.parse(raw);
+      if (Array.isArray(d.events)) return d;
+    } catch { /* fail soft — a corrupt neighbour must not take the hub down */ }
+  }
+  return null;
+}
+
 /* ══════════════════════════════════════════════════════════════════
-   GOOD COMPANY — different origin, so nothing here can read it.
-   It arrives as a pasted export and is always stamped with its age.
+   CHARISMA GYM — now on this origin, so it is read live like the others.
+   Falls back to a pasted snapshot only if nothing is stored here yet.
    ══════════════════════════════════════════════════════════════════ */
 function readGoodCompany() {
   const R = blank('gc');
-  R.offOrigin = true;
   R.links = [
     { label: 'Hub',       href: R.url },
     { label: 'Call',      href: R.url + '#call' },
@@ -511,19 +527,21 @@ function readGoodCompany() {
     { label: 'Signals',   href: R.url + '#signals' }
   ];
 
-  const snap = D.gc();
-  if (!snap) {
+  const live = gcLive();
+  const snap = live ? null : D.gc();
+  R.offOrigin = !live;
+  if (!live && !snap) {
     R.ok = false;
-    R.reason = 'Good Company runs on onrender.com — a different origin, so its data cannot be read from here. Export it from its hub and paste it into Data.';
+    R.reason = 'Charisma Gym is on this origin now, but nothing has been logged on this device yet. Open it once — or paste an export into Data if you have history from elsewhere.';
     return R;
   }
 
-  const d = snap.data || {};
+  const d = live || snap.data || {};
   const events = Array.isArray(d.events) ? d.events : [];
   const field = Array.isArray(d.field) ? d.field : [];
   const calls = Array.isArray(d.calls) ? d.calls : [];
   R.started = events.length > 0;
-  R.age = since(iso(new Date(snap.importedAt)));
+  R.age = live ? 0 : since(iso(new Date(snap.importedAt)));
 
   /* `at` rather than `day`: their day key is UTC, so late-night entries carry
      yesterday's label. Timestamps are unambiguous. */
@@ -558,7 +576,9 @@ function readGoodCompany() {
     { l: 'Reps, 7d',  v: String(reps), tone: reps < 3 ? 'open' : 'ok' },
     { l: 'Last field', v: fieldDays == null ? 'never' : fieldDays === 0 ? 'today' : `${fieldDays}d ago`, tone: fieldDays == null || fieldDays >= 7 ? 'open' : 'ok' },
     { l: 'Weakest',   v: weakest ? `${weakest[0]} ${weakest[1]}` : '—' },
-    { l: 'Snapshot',  v: R.age === 0 ? 'today' : `${R.age}d old`, tone: R.age > 14 ? 'open' : 'plain' }
+    live
+      ? { l: 'Source', v: 'live', tone: 'ok' }
+      : { l: 'Snapshot', v: R.age === 0 ? 'today' : `${R.age}d old`, tone: R.age > 14 ? 'open' : 'plain' }
   ];
 
   /* Their own second rule: simulation without field data is a closed loop
@@ -586,11 +606,11 @@ function readGoodCompany() {
       cta: 'Run the review', href: R.url + '#signals'
     });
   }
-  if (R.age > 14) {
+  if (!live && R.age > 14) {
     R.proposals.push({
       tier: 'housekeeping', app: 'gc', overdue: R.age,
       why: `This snapshot is ${R.age} days old`,
-      what: 'Good Company cannot be read from here, so its numbers above are frozen at the last paste. Export from its hub and paste again.',
+      what: 'These numbers are frozen at the last paste. Open Charisma Gym on this device and it will be read live from then on.',
       cta: 'Update it', href: '#/data'
     });
   }
