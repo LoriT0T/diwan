@@ -35,6 +35,15 @@ already stores — so the two cannot disagree.
 **Ticking writes into the app that owns it.** Compound's own `toggleH`, Jamāl's ritual log,
 Sakina's prayer states. Every tick is one reversible write with an Undo in the toast.
 
+**Every app puts its work in the same list.** Compound's components at their hour, Jamāl's
+rituals in their block, the five prayers at their computed times, Charisma Gym's daily units,
+Anbīq's reading and Crucible, and a live Āfāq trip's itinerary at the times on it.
+
+A task is what an app **defines** as due today, never what you have logged before. That
+distinction was a bug: the queue was gated on each app having history, so a device that had
+never opened Compound showed no Compound work — when all twenty-five of its components were
+due, and being new is exactly when you most need the list.
+
 Two things are deliberately not tickable:
 
 - **Anything wanting a real number** — a set, a page count, a mood on two axes. Ticking
@@ -42,6 +51,11 @@ Two things are deliberately not tickable:
   They sit under *Needs the app*.
 - **Compound's Situational band.** Its own copy says these are taken for a reason, not
   daily. Five of them in a tick list turns a considered decision into a chore.
+
+A third case sits in between: where an app has never been opened *on this device*, its rows
+still appear at the right time but carry you there instead of ticking. The hub will not
+create another app's storage from nothing — Jamāl's `set.start` is the baseline its adherence
+is measured from, and stamping it from here would silently decide when you started.
 
 **Salah is in the queue at its real time, and is never scored.** Sakina refuses streaks and
 anything that turns a gap into a failure; a prayer that has passed unmarked simply sits

@@ -189,13 +189,76 @@ async function sakinaPrayer({ date, prayer, state }) {
   } finally { db.close(); }
 }
 
+/* ── Charisma Gym ──────────────────────────────────────────────────
+   Written raw, but not by choice: its store.js is a classic script that hangs
+   `Store` off `window` and exports nothing, so there is no module to import.
+   This mirrors its `addRep()` exactly, including the local day key it settled on
+   and the 4,000-event cap its own writer enforces. */
+const GC_KEYS = ['charismagym.v1', 'goodcompany.v2', 'goodcompany.v1'];
+const GC_MAX = 4000;
+function gcKeyInUse() {
+  for (const k of GC_KEYS) if (localStorage.getItem(k)) return k;
+  return GC_KEYS[0];
+}
+const localDay = ts => {
+  const d = new Date(ts);
+  return new Date(d.getTime() - d.getTimezoneOffset() * 6e4).toISOString().slice(0, 10);
+};
+
+function gcRep() {
+  const key = gcKeyInUse();
+  const st = RAW(key);
+  if (!st || !Array.isArray(st.events)) {
+    return { ok: false, error: 'Charisma Gym has no data on this device yet. Open it once first.' };
+  }
+  const ev = { type: 'rep', payload: { source: 'diwan' }, day: localDay(Date.now()), at: Date.now() };
+  st.events.push(ev);
+  if (st.events.length > GC_MAX) st.events = st.events.slice(-GC_MAX);
+  try { localStorage.setItem(key, JSON.stringify(st)); }
+  catch { return { ok: false, error: 'Could not save to Charisma Gym — storage is full or blocked.' }; }
+  return {
+    ok: true, done: true,
+    undo: () => {
+      const s = RAW(key); if (!s || !Array.isArray(s.events)) return;
+      const i = s.events.findIndex(e => e.at === ev.at && e.type === 'rep' && e.payload?.source === 'diwan');
+      if (i >= 0) s.events.splice(i, 1);
+      localStorage.setItem(key, JSON.stringify(s));
+    }
+  };
+}
+
+/* ── Āfāq ──────────────────────────────────────────────────────────
+   Its store is a proper module with its own `toggleItem`, and `replace()`
+   re-syncs the singleton from disk first for the same reason Anbīq does. */
+async function afaqItem({ tripId, date, itemId }) {
+  const F = await import('../../afaq/js/store.js');
+  const disk = RAW('afaq.v1');
+  if (disk) F.replace(disk);
+  const t = F.trip(tripId);
+  const item = t && (t.days || []).find(d => d.date === date)?.items.find(i => i.id === itemId);
+  if (!item) return { ok: false, error: 'That itinerary item is no longer there.' };
+  const before = !!item.done;
+  F.toggleItem(tripId, date, itemId);
+  return {
+    ok: true, done: !before,
+    undo: () => {
+      const d = RAW('afaq.v1'); if (d) F.replace(d);
+      const cur = F.trip(tripId);
+      const it = cur && (cur.days || []).find(x => x.date === date)?.items.find(y => y.id === itemId);
+      if (it && !!it.done !== before) F.toggleItem(tripId, date, itemId);
+    }
+  };
+}
+
 /* ── dispatch table ───────────────────────────────────────────────── */
 const HANDLERS = {
-  'compound.h':   compoundToggle,
-  'jamal.ritual': jamalToggle,
-  'jamal.inside': jamalInside,
-  'anbiq.seen':   anbiqDispatchSeen,
-  'sakina.prayer': sakinaPrayer
+  'compound.h':    compoundToggle,
+  'jamal.ritual':  jamalToggle,
+  'jamal.inside':  jamalInside,
+  'anbiq.seen':    anbiqDispatchSeen,
+  'sakina.prayer': sakinaPrayer,
+  'gc.rep':        gcRep,
+  'afaq.item':     afaqItem
 };
 
 /**

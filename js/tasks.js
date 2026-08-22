@@ -15,6 +15,12 @@
  * stores under `sakina.place` on this same origin — the same library, the same version,
  * the same settings, so the times on this page and the times in Sakina cannot disagree.
  *
+ * A task is what an app DEFINES as due today, not what you have logged before. That
+ * distinction was a bug once: the queue was gated on each app having history, so a
+ * device that had never opened Compound showed no Compound work at all — when in fact
+ * all twenty-five of its components were due, and being new is exactly when you most
+ * need the list. History decides what is already ticked. It never decides what exists.
+ *
  * What is deliberately NOT in the queue:
  *   · Compound's Situational band. Its own copy says these are "taken for a reason, not
  *     daily"; putting five of them in a daily tick list would turn a considered decision
@@ -139,7 +145,7 @@ export async function buildQueue(snap) {
 
   /* ── Compound ── */
   const comp = byId('compound');
-  if (comp && comp.ok && comp.started) {
+  if (comp && comp.ok) {
     try {
       const [H, S, DATA] = await Promise.all([
         import('../../compound/js/health.js'),
@@ -182,10 +188,16 @@ export async function buildQueue(snap) {
 
   /* ── Jamāl ── */
   const jam = byId('jamal');
-  if (jam && jam.ok && jam.started) {
+  if (jam && jam.ok) {
     try {
       const J = await import('../../jamal/js/data.js');
-      const st = JSON.parse(localStorage.getItem('jamal.v1') || 'null') || {};
+      const stored = JSON.parse(localStorage.getItem('jamal.v1') || 'null');
+      /* Jamāl's rituals are due whether or not it has been opened here, but the hub
+         will not create its storage from nothing — `set.start` is the baseline its
+         adherence is measured from, and stamping it from this page would silently
+         decide when the user "started". Until it exists, these carry you there. */
+      const canTick = !!stored;
+      const st = stored || {};
       st.done ||= {}; st.last ||= {}; st.inside ||= {};
       for (const r of J.RITUALS) {
         const n = dueIn(r, st, date);
@@ -198,10 +210,11 @@ export async function buildQueue(snap) {
         const when = r.slot === 'am' ? at(HOUR.jamalAm) : r.slot === 'pm' ? at(HOUR.jamalPm) : null;
         out.push({
           key: 'jamal:' + r.id, app: 'jamal', label: r.name, note: 'Ritual',
-          domain: 'ritual', brief: r.kicker || '', mins: r.mins, block: r.slot,
+          domain: 'ritual', mins: r.mins, block: r.slot,
           at: dormant ? null : when, slot: when ? null : 'any', done, dormant, tier: 'due',
+          brief: canTick ? (r.kicker || '') : 'Open Jamāl once and these become tickable here',
           words: w(r.id, [r.name.toLowerCase()]),
-          action: { kind: 'jamal.ritual', date, id: r.id },
+          action: canTick ? { kind: 'jamal.ritual', date, id: r.id } : null,
           href: jam.url + '#/rituals'
         });
       }
@@ -218,7 +231,7 @@ export async function buildQueue(snap) {
           domain: 'inside', brief: tog ? '' : `Needs a number — ${m.unit || ''}`.trim(),
           at: null, slot: 'any', done: false, tier: 'due',
           words: w(m.id, [m.lbl.toLowerCase()]),
-          action: tog ? { kind: 'jamal.inside', date, id: m.id, value: 1 } : null,
+          action: (tog && canTick) ? { kind: 'jamal.inside', date, id: m.id, value: 1 } : null,
           href: jam.url
         });
       }
@@ -227,9 +240,12 @@ export async function buildQueue(snap) {
 
   /* ── Sakina: the day's five, at their real times ── */
   const sak = byId('sakina');
-  if (sak && sak.ok) {
+  if (sak) {
     const times = prayerTimes();
     const today = sak.prayerToday || {};
+    /* The five are due whether or not Sakina has ever been opened on this device.
+       Only the tick needs its database; without one they carry you there instead. */
+    const canTick = sak.ok;
     if (times) {
       for (const p of PRAYER_ORDER) {
         const state = today[p] || 'none';
@@ -237,14 +253,15 @@ export async function buildQueue(snap) {
           key: 'sakina:' + p, app: 'sakina', label: PRAYER_LABEL[p], note: 'Prayer',
           domain: 'prayer', at: times[p], done: state !== 'none', state,
           tier: 'prayer', prayer: p,
+          brief: canTick ? '' : 'Open Sakina once and these become tickable here',
           words: w(p),
-          action: { kind: 'sakina.prayer', date, prayer: p, state: 'prayed' },
-          alt: { label: 'jamāʿah', action: { kind: 'sakina.prayer', date, prayer: p, state: 'jamaah' } },
+          action: canTick ? { kind: 'sakina.prayer', date, prayer: p, state: 'prayed' } : null,
+          alt: canTick ? { label: 'jamāʿah', action: { kind: 'sakina.prayer', date, prayer: p, state: 'jamaah' } } : null,
           href: sak.url + 'prayer/'
         });
       }
     }
-    if (sak.started) {
+    if (sak.ok && sak.started) {
       const staleMood = !sak.stat.some(s => s.l === 'Last mood' && s.v === 'today');
       if (staleMood) out.push({
         key: 'sakina:mood', app: 'sakina', label: 'How are you', note: 'Mood',
@@ -256,10 +273,43 @@ export async function buildQueue(snap) {
     }
   }
 
-  /* ── Anbīq: dispatch items are the only thing here a tick can honestly close ── */
+  /* ── Anbīq — its daily loop, plus anything left overnight ──
+     Reading and the Crucible want real input (a page number, a written synthesis),
+     so they carry you to the app rather than pretending a tick did the work. */
   const anb = byId('anbiq');
-  if (anb && anb.ok && Array.isArray(anb.dispatch)) {
-    for (const it of anb.dispatch) {
+  if (anb && anb.ok) {
+    try {
+      const A = await import('../../anbiq/js/store.js');
+      const st = A.state();
+      const readToday = st.sessions.some(x => x.date === date);
+      const openBooks = A.reading();
+
+      out.push({
+        key: 'anbiq:read', app: 'anbiq', label: openBooks.length ? `Read — ${openBooks[0].title}` : 'Read',
+        note: 'Reading', domain: 'reading',
+        brief: openBooks.length
+          ? `${openBooks[0].cursor}/${openBooks[0].pages} pages · target ${st.set.pagesPerDay || 30}/day`
+          : 'Nothing open on the Shelf yet',
+        at: null, slot: 'any', done: readToday, tier: 'due',
+        words: ['read', 'reading', 'pages'],
+        action: null, href: anb.url + (openBooks.length ? '' : '#shelf'),
+        cta: openBooks.length ? 'Log pages' : 'Open the Shelf'
+      });
+
+      /* The daily conjunction only exists once there are two claims to collide. */
+      if (A.live().filter(c => c.text.trim()).length >= 2) {
+        const doneToday = !!A.crucibleOn(date);
+        out.push({
+          key: 'anbiq:crucible', app: 'anbiq', label: 'The Crucible', note: 'Recombination',
+          domain: 'crucible', brief: 'Today’s pair — the two most distant claims in the lab',
+          at: null, slot: 'any', done: doneToday, tier: 'due',
+          words: ['crucible', 'conjunction', 'synthesis'],
+          action: null, href: anb.url + '#crucible', cta: 'Run it'
+        });
+      }
+    } catch { /* the reader already reported it */ }
+
+    for (const it of (anb.dispatch || [])) {
       out.push({
         key: 'anbiq:d:' + it.id, app: 'anbiq', label: it.title, note: 'Dispatch',
         domain: 'dispatch', brief: (it.body || '').slice(0, 120),
@@ -269,6 +319,83 @@ export async function buildQueue(snap) {
         href: anb.url
       });
     }
+  }
+
+  /* ── Charisma Gym ──
+     A rep is tickable because its own hub already offers exactly that button.
+     The warm-up and the word drill are not: both are timed exercises whose value
+     is in doing them, and a tick here would log the record without the rep. */
+  const gc = byId('gc');
+  if (gc) {
+    const raw = (() => { for (const k of ['charismagym.v1', 'goodcompany.v2', 'goodcompany.v1']) {
+      try { const v = JSON.parse(localStorage.getItem(k) || 'null'); if (v) return v; } catch {} } return null; })();
+    const events = (raw && raw.events) || [];
+    const dayStart = new Date(); dayStart.setHours(0, 0, 0, 0);
+    const repsToday = events.filter(e => e.type === 'rep' && e.at >= dayStart.getTime()).length;
+    const drillToday = events.some(e => e.type === 'drill' && e.at >= dayStart.getTime());
+    const vocabToday = events.filter(e => e.type === 'vocab' && e.at >= dayStart.getTime()).length;
+    const wantWords = (raw && raw.settings && raw.settings.dailyWords) || 5;
+
+    out.push({
+      key: 'gc:warmup', app: 'gc', label: 'Warm up', note: 'Voice',
+      domain: 'warmup', brief: 'Articulators, consonants, twisters — it is a timed drill',
+      at: null, slot: 'any', done: drillToday, tier: 'due',
+      words: ['warm up', 'warmup', 'twisters', 'articulation', 'drills'],
+      action: null, href: gc.url + '#warmup', cta: 'Run the drill'
+    });
+    out.push({
+      key: 'gc:words', app: 'gc', label: `Words — ${vocabToday}/${wantWords}`, note: 'Vocabulary',
+      domain: 'words', brief: 'Recall counts only on distinct days, so it has to be done there',
+      at: null, slot: 'any', done: vocabToday >= wantWords, tier: 'due',
+      words: ['words', 'vocab', 'vocabulary'],
+      action: null, href: gc.url + '#vocab', cta: 'Open Words'
+    });
+    out.push({
+      key: 'gc:rep', app: 'gc', label: 'A rep', note: 'Reps',
+      domain: 'rep', brief: repsToday ? `${repsToday} logged today` : 'One conversation you started. Volume is the input you control.',
+      at: null, slot: 'any', done: repsToday > 0, tier: 'due',
+      words: ['rep', 'conversation', 'talked to', 'spoke to'],
+      action: raw ? { kind: 'gc.rep' } : null, href: gc.url + '#field',
+      cta: raw ? undefined : 'Open Charisma Gym'
+    });
+  }
+
+  /* ── Āfāq ──
+     A live trip's itinerary is the one thing here that is genuinely a checklist
+     with times on it, and its own `toggleItem` is the write. Everything else in
+     that app wants a number — miles, minutes, a rating. */
+  const afq = byId('afaq');
+  if (afq) {
+    try {
+      const F = await import('../../afaq/js/store.js');
+      const st = F.state();
+      const live = (st.trips || []).find(t => t.from <= date && t.to >= date && t.status !== 'idea');
+      if (live) {
+        const day = (live.days || []).find(d => d.date === date);
+        for (const it of (day && day.items) || []) {
+          out.push({
+            key: 'afaq:item:' + it.id, app: 'afaq', label: it.txt || it.kind || 'Itinerary item',
+            note: live.name, domain: 'trip', brief: it.note || '',
+            at: it.t ? at(Number(it.t.split(':')[0]) + Number(it.t.split(':')[1] || 0) / 60) : null,
+            slot: it.t ? null : 'any', done: !!it.done, tier: 'due',
+            words: [(it.txt || '').toLowerCase()].filter(x => x.length > 3),
+            action: { kind: 'afaq.item', tripId: live.id, date, itemId: it.id },
+            href: afq.url + '#travel'
+          });
+        }
+      }
+      for (const p of (F.activePursuits() || [])) {
+        const loggedToday = (p.logs || []).some(l => l.date === date);
+        if (loggedToday) continue;
+        out.push({
+          key: 'afaq:pursuit:' + p.id, app: 'afaq', label: 'Practice', note: 'Craft',
+          domain: 'pursuit', brief: 'Minutes go in the app',
+          at: null, slot: 'any', done: false, tier: 'due',
+          words: ['practice', 'practised', 'practiced'],
+          action: null, href: afq.url + '#craft', cta: 'Log it'
+        });
+      }
+    } catch { /* reported by the reader */ }
   }
 
   /* ── What is left that a tick cannot close ──

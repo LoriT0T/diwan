@@ -665,6 +665,19 @@ async function readAfaq() {
   }
   R.last = Object.keys(R.days).sort().pop() || null;
 
+  /* Its own engine before the empty-check, deliberately: on a device with nothing
+     logged `theOneThing()` returns the onboarding move, and that is precisely the
+     day a new reader most needs to be told where to start. */
+  try {
+    const one = E.theOneThing();
+    if (one) R.proposals.push({
+      tier: one.k && /start here/i.test(one.k) ? 'due' : 'reality',
+      app: 'afaq', overdue: 1,
+      why: detag(one.h), what: detag(one.why),
+      cta: 'Open Āfāq', href: R.url + (one.go ? '#' + one.go : '')
+    });
+  } catch { /* not enough state for it to have a view */ }
+
   if (!R.started) { R.stat = [{ l: 'Not started', v: '—' }]; return R; }
 
   let stale = [], up = [], active = [];
@@ -678,17 +691,6 @@ async function readAfaq() {
     { l: 'Pursuits', v: String(active.length) },
     { l: 'Trips',    v: String(up.length) }
   ];
-
-  /* Its own single-action engine, taken as it comes. */
-  try {
-    const one = E.theOneThing();
-    if (one) R.proposals.push({
-      tier: one.k && /start here/i.test(one.k) ? 'due' : 'reality',
-      app: 'afaq', overdue: 1,
-      why: detag(one.h), what: detag(one.why),
-      cta: 'Open Āfāq', href: R.url + (one.go ? '#' + one.go : '')
-    });
-  } catch { /* not enough state for it to have a view */ }
 
   return R;
 }
