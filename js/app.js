@@ -837,12 +837,13 @@ function syncSection() {
         ways, so nothing already on it is lost. Creating the account sends a confirmation
         email; click that before signing in.</p>
         <label class="f-lab" for="sy-mail">Email</label>
-        <input id="sy-mail" class="f-input" type="email" autocomplete="username" spellcheck="false">
+        <input id="sy-mail" class="f-input" type="email" autocomplete="username" spellcheck="false"
+               value="mesadhq@gmail.com">
         <label class="f-lab" for="sy-pw">Password</label>
-        <input id="sy-pw" class="f-input" type="password" autocomplete="current-password">
+        <input id="sy-pw" class="f-input" type="password" autocomplete="current-password" autofocus>
         <div class="btn-row">
-          <button class="btn" id="sy-in">Sign in</button>
-          <button class="btn quiet" id="sy-up">Create the account</button>
+          <button class="btn" id="sy-up">Create the account</button>
+          <button class="btn quiet" id="sy-in">Sign in</button>
           <button class="btn quiet danger" id="sy-forget">Use a different project</button>
         </div>
         <p class="tiny" id="sy-msg" style="margin-top:11px"></p>
