@@ -1,0 +1,256 @@
+/* Dīwān — the visual system.
+ *
+ * The hub has no accent colour of its own. Its chrome is neutral, and every
+ * saturated pixel on the page belongs to one of the five apps, taken from that
+ * app's own :root. That is the whole idea made visible: this page is the register,
+ * they are the content.
+ *
+ * No web fonts. The five it sits above are offline-first with no build step, and a
+ * font request would be the only network dependency in the set. */
+
+:root{
+  --bg:#0a0b0d; --bg-2:#0f1114; --card:#131519; --card-2:#191c22;
+  --line:#22262d; --line-2:#2f343d;
+  --tx:#eceef2; --tx-2:#98a0ac; --tx-3:#666d79;
+
+  /* the five, each lifted from its own app's palette */
+  --compound:#ff4d2e;
+  --jamal:#c1a06a;
+  --anbiq:#7fd6c9;
+  --sakina:#7d9a86;
+  --gc:#9085e9;
+
+  --ok:#5aa06e; --warn:#d69a3f; --bad:#c4614c;
+
+  --r:14px; --r-sm:10px; --pad:16px;
+  --safe-b:env(safe-area-inset-bottom,0px);
+  --safe-t:env(safe-area-inset-top,0px);
+  --sans:-apple-system,BlinkMacSystemFont,'SF Pro Text','Segoe UI',Roboto,Helvetica,Arial,sans-serif;
+  --serif:ui-serif,'Iowan Old Style','Palatino Linotype',Palatino,'Times New Roman',Georgia,serif;
+  --mono:ui-monospace,SFMono-Regular,'SF Mono',Menlo,monospace;
+}
+
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{margin:0;padding:0}
+body{
+  background:var(--bg); color:var(--tx);
+  font-family:var(--sans); font-size:15px; line-height:1.5;
+  -webkit-font-smoothing:antialiased;
+  padding-top:var(--safe-t);
+  padding-bottom:calc(64px + var(--safe-b));
+  overscroll-behavior-y:none;
+}
+#app{max-width:720px;margin:0 auto;padding:0 var(--pad)}
+
+/* ── type ───────────────────────────────────────────── */
+h1,h2,h3{margin:0;font-weight:600;letter-spacing:-.01em}
+.masthead{padding:26px 0 18px}
+.eyebrow{
+  font-size:11px;letter-spacing:.16em;text-transform:uppercase;color:var(--tx-3);
+  margin:0 0 7px;font-weight:600;
+}
+.masthead h1{font-size:29px;letter-spacing:-.022em}
+.masthead .sub{color:var(--tx-2);font-size:14px;margin-top:6px;line-height:1.45}
+
+.sect{margin:26px 0 0}
+.sect-h{display:flex;align-items:baseline;justify-content:space-between;gap:12px;margin:0 0 10px}
+.sect-h h3{
+  font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--tx-3);font-weight:600;
+}
+.sect-h .aside{font-size:12px;color:var(--tx-3)}
+
+.small{font-size:13px;color:var(--tx-2);line-height:1.5}
+.tiny{font-size:11.5px;color:var(--tx-3);line-height:1.5}
+.serif{font-family:var(--serif)}
+
+/* ── cards ──────────────────────────────────────────── */
+.card{background:var(--card);border:1px solid var(--line);border-radius:var(--r)}
+.card.pad{padding:15px 16px}
+
+/* ── the one action ─────────────────────────────────── */
+.act{
+  background:var(--card); border:1px solid var(--line);
+  border-left:3px solid var(--hue,var(--tx-3));
+  border-radius:var(--r); padding:18px 18px 16px; margin-top:4px;
+}
+.act-top{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin-bottom:9px}
+.act-tier{
+  font-size:10px;font-weight:700;letter-spacing:.13em;text-transform:uppercase;
+  color:var(--hue,var(--tx-2));
+}
+.act-app{
+  font-size:10px;font-weight:600;letter-spacing:.09em;text-transform:uppercase;
+  color:var(--tx-3);border:1px solid var(--line-2);border-radius:4px;padding:2px 6px;
+}
+.act h2{font-size:19px;line-height:1.28;letter-spacing:-.017em;margin-bottom:8px;text-wrap:balance}
+.act p{margin:0;color:var(--tx-2);font-size:14.5px;line-height:1.55;font-family:var(--serif)}
+.act .go{
+  display:inline-flex;align-items:center;gap:7px;margin-top:14px;
+  background:var(--hue,var(--card-2));color:#0a0b0d;
+  border:0;border-radius:999px;padding:9px 17px;
+  font-family:var(--sans);font-size:13.5px;font-weight:600;
+  text-decoration:none;cursor:pointer;
+}
+.act .go:active{opacity:.82}
+.act .go .arr{font-size:15px;line-height:1}
+.act-none{border-left-color:var(--line-2)}
+.act-none h2{color:var(--tx)}
+
+/* ── the rest, quieter ──────────────────────────────── */
+.rest{display:flex;flex-direction:column;gap:1px;background:var(--line);
+  border:1px solid var(--line);border-radius:var(--r);overflow:hidden}
+.rest-row{
+  display:grid;grid-template-columns:3px 1fr auto;align-items:center;gap:0 12px;
+  background:var(--card);padding:0;text-decoration:none;color:inherit;
+}
+.rest-row .bar{align-self:stretch;background:var(--hue);min-height:100%}
+.rest-row .body{padding:11px 0}
+.rest-row .why{font-size:13.5px;color:var(--tx);line-height:1.35}
+.rest-row .what{font-size:12px;color:var(--tx-3);line-height:1.4;margin-top:2px}
+.rest-row .tier{
+  font-size:9.5px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;
+  color:var(--tx-3);padding-right:14px;white-space:nowrap;
+}
+.rest-row:active{background:var(--card-2)}
+
+/* ── app status grid ────────────────────────────────── */
+.grid{display:grid;grid-template-columns:1fr;gap:9px}
+@media(min-width:560px){.grid{grid-template-columns:1fr 1fr}}
+
+.app{
+  display:block;text-decoration:none;color:inherit;
+  background:var(--card);border:1px solid var(--line);border-radius:var(--r);
+  border-top:2px solid var(--hue);padding:13px 14px 12px;
+}
+.app:active{background:var(--card-2)}
+.app-h{display:flex;align-items:baseline;justify-content:space-between;gap:10px}
+.app-n{font-size:15.5px;font-weight:600;color:var(--hue);letter-spacing:-.01em}
+.app-ar{font-size:12px;color:var(--tx-3)}
+.app-t{font-size:11.5px;color:var(--tx-3);margin-top:1px}
+.app-s{display:flex;flex-wrap:wrap;gap:4px 16px;margin-top:10px}
+.app-s .st{min-width:0}
+.app-s .l{display:block;font-size:9.5px;letter-spacing:.1em;text-transform:uppercase;color:var(--tx-3)}
+.app-s .v{font-size:14px;font-weight:600;color:var(--tx);font-variant-numeric:tabular-nums}
+.app-s .v.open{color:var(--warn)}
+.app-s .v.ok{color:var(--ok)}
+.app-cold{color:var(--tx-3);font-size:12.5px;margin-top:9px;line-height:1.45}
+
+/* prayer pips — state, never a score */
+.pips{display:flex;gap:4px;margin-top:10px;align-items:center}
+.pip{width:100%;height:4px;border-radius:2px;background:var(--line-2)}
+.pip.on{background:var(--sakina)}
+.pip.late{background:var(--warn)}
+.pip.missed{background:var(--bad);opacity:.5}
+.pips-l{font-size:9.5px;letter-spacing:.1em;text-transform:uppercase;color:var(--tx-3);
+  white-space:nowrap;margin-right:2px}
+
+/* ── the merged grid ────────────────────────────────── */
+.heat{overflow-x:auto;padding-bottom:4px}
+.heat-in{display:flex;flex-direction:column;gap:3px;min-width:min-content}
+.heat-row{display:flex;gap:3px;align-items:center}
+.heat-lab{
+  font-size:9.5px;color:var(--tx-3);width:30px;flex:none;text-align:right;
+  padding-right:5px;font-variant-numeric:tabular-nums;
+}
+/* One cell per day, split into five vertical slivers — one per app. A dark
+   sliver running down a whole column is the thing worth seeing: it says which
+   domain you are losing, not merely that a day was quiet. */
+.cell{
+  width:19px;height:19px;flex:none;border-radius:3px;
+  background:var(--card-2);           /* the empty day still reads as a day */
+  display:flex;overflow:hidden;
+}
+.cell.future{background:transparent;box-shadow:inset 0 0 0 1px var(--line)}
+.cell.today{outline:1.5px solid var(--tx-2);outline-offset:1.5px}
+.cell i{flex:1;background:transparent}
+.cell i.on{background:var(--c)}
+.heat-dow{display:flex;gap:3px;align-items:center;margin-bottom:2px}
+.heat-dow span{
+  width:19px;flex:none;text-align:center;font-size:9px;color:var(--tx-3);
+  letter-spacing:.04em;
+}
+.heat-key{display:flex;flex-wrap:wrap;gap:5px 13px;margin-top:11px}
+.k{display:flex;align-items:center;gap:5px;font-size:11px;color:var(--tx-2)}
+.k i{width:9px;height:9px;border-radius:2px;background:var(--c);display:block}
+
+/* ── activity feed ──────────────────────────────────── */
+.feed{display:flex;flex-direction:column}
+.fd{display:grid;grid-template-columns:3px 62px 1fr;gap:0 11px;align-items:start;
+  padding:9px 0;border-bottom:1px solid var(--line)}
+.fd:last-child{border-bottom:0}
+.fd .bar{align-self:stretch;background:var(--hue);border-radius:2px}
+.fd .when{font-size:11px;color:var(--tx-3);padding-top:2px;font-variant-numeric:tabular-nums}
+.fd .txt{font-size:13.5px;color:var(--tx-2);line-height:1.4;overflow-wrap:anywhere}
+.fd .txt b{color:var(--tx);font-weight:600}
+
+/* ── links row inside app cards ─────────────────────── */
+.links{display:flex;flex-wrap:wrap;gap:6px;margin-top:12px}
+.lnk{
+  font-size:12px;color:var(--tx-2);text-decoration:none;
+  border:1px solid var(--line-2);border-radius:999px;padding:4px 11px;
+}
+.lnk:active{background:var(--card-2);color:var(--tx)}
+
+/* ── buttons / forms ────────────────────────────────── */
+.btn{
+  font-family:var(--sans);font-size:13.5px;font-weight:600;
+  background:var(--card-2);color:var(--tx);border:1px solid var(--line-2);
+  border-radius:999px;padding:9px 16px;cursor:pointer;
+}
+.btn:active{opacity:.8}
+.btn.quiet{background:transparent;color:var(--tx-2)}
+.btn.danger{color:var(--bad);border-color:var(--bad)}
+.btn-row{display:flex;flex-wrap:wrap;gap:8px;margin-top:12px}
+textarea{
+  width:100%;min-height:110px;background:var(--bg-2);color:var(--tx);
+  border:1px solid var(--line-2);border-radius:var(--r-sm);padding:11px 12px;
+  font-family:var(--mono);font-size:12px;line-height:1.45;resize:vertical;
+}
+textarea:focus{outline:2px solid var(--tx-3);outline-offset:1px}
+
+/* ── diagnostics ────────────────────────────────────── */
+.diag{display:flex;flex-direction:column}
+.dg{display:grid;grid-template-columns:8px 1fr;gap:0 11px;padding:11px 0;
+  border-bottom:1px solid var(--line);align-items:start}
+.dg:last-child{border-bottom:0}
+.dot{width:8px;height:8px;border-radius:50%;margin-top:6px}
+.dot.up{background:var(--ok)} .dot.down{background:var(--bad)} .dot.cold{background:var(--tx-3)}
+.dg .n{font-size:14px;font-weight:600;color:var(--tx)}
+.dg .m{font-size:12.5px;color:var(--tx-2);line-height:1.45;margin-top:2px}
+.dg code{font-family:var(--mono);font-size:11.5px;color:var(--tx-3)}
+
+/* ── notes ──────────────────────────────────────────── */
+.note{
+  background:var(--bg-2);border:1px solid var(--line);border-radius:var(--r-sm);
+  padding:11px 13px;font-size:12.5px;color:var(--tx-2);line-height:1.5;
+}
+.note b{color:var(--tx);font-weight:600}
+
+/* ── toast ──────────────────────────────────────────── */
+#toast{
+  position:fixed;left:50%;transform:translateX(-50%);
+  bottom:calc(78px + var(--safe-b));z-index:60;
+  background:var(--card-2);color:var(--tx);border:1px solid var(--line-2);
+  border-radius:999px;padding:9px 17px;font-size:13px;
+  box-shadow:0 8px 28px rgba(0,0,0,.5);max-width:86vw;text-align:center;
+}
+#toast.bad{border-color:var(--bad);color:var(--bad)}
+
+/* ── nav ────────────────────────────────────────────── */
+.nav{
+  position:fixed;left:0;right:0;bottom:0;z-index:50;
+  background:color-mix(in srgb,var(--bg) 90%,transparent);
+  backdrop-filter:saturate(150%) blur(14px);
+  -webkit-backdrop-filter:saturate(150%) blur(14px);
+  border-top:1px solid var(--line);padding-bottom:var(--safe-b);
+}
+.nav-in{max-width:720px;margin:0 auto;display:grid;grid-template-columns:repeat(4,1fr)}
+.nav a{
+  display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;
+  min-height:56px;text-decoration:none;color:var(--tx-3);font-size:10.5px;letter-spacing:.02em;
+}
+.nav a .ico{font-size:16px;line-height:1}
+.nav a.on{color:var(--tx)}
+
+:focus-visible{outline:2px solid var(--tx-2);outline-offset:2px;border-radius:6px}
+@media(prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}

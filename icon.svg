@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="Dīwān">
+  <rect width="512" height="512" rx="112" fill="#0a0b0d"/>
+  <rect x="8" y="8" width="496" height="496" rx="104" fill="none" stroke="#22262d" stroke-width="8"/>
+  <!-- five ruled columns, one per app, in each app's own accent -->
+  <g stroke-linecap="round" stroke-width="30">
+    <line x1="120" y1="352" x2="120" y2="196" stroke="#ff4d2e"/>
+    <line x1="188" y1="352" x2="188" y2="150" stroke="#c1a06a"/>
+    <line x1="256" y1="352" x2="256" y2="118" stroke="#7fd6c9"/>
+    <line x1="324" y1="352" x2="324" y2="168" stroke="#7d9a86"/>
+    <line x1="392" y1="352" x2="392" y2="214" stroke="#9085e9"/>
+  </g>
+  <!-- the register line they all stand on -->
+  <line x1="104" y1="392" x2="408" y2="392" stroke="#666d79" stroke-width="14" stroke-linecap="round"/>
+</svg>

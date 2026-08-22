@@ -1,0 +1,12 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "diwan",
+      "runtimeExecutable": "python3",
+      "runtimeArgs": ["-m", "http.server", "4180", "--directory", ".."],
+      "port": 4180,
+      "url": "http://localhost:4180"
+    }
+  ]
+}
