@@ -50,16 +50,22 @@ Today to the Log.
 
 ## Sync across devices
 
-**Data → Sync** connects a free Supabase project and every device signed into it converges.
-Setup is three steps and about five minutes: make the project, run one SQL block, paste the
-project URL and the **anon public** key.
+**Data → Sync.** The project is wired in and the schema is applied; sign in and the device
+joins. Every device signed into the same account converges.
 
-The anon key is safe in this public repo *by design*. It identifies the project and grants
-nothing; every row is guarded inside Postgres by Row Level Security —
-`auth.uid() = user_id` — so a request without a signed-in token reaches nothing at all. The
-database is the guard, not the client, which is the only arrangement that survives the
-client being readable. The **service_role** key is the opposite and the app refuses it if
-you paste it by mistake.
+The publishable key is in this repo on purpose. It names the project and grants nothing —
+every row is guarded inside Postgres by Row Level Security, `auth.uid() = user_id`, so the
+database is the guard rather than the client. That is the only arrangement that survives
+the client being readable, and it was checked against the live project rather than assumed:
+
+```
+read  with only the publishable key  →  []          no rows, nothing leaked
+write with only the publishable key  →  401  "new row violates row-level security policy"
+```
+
+A **secret** key is the opposite — it bypasses RLS entirely. The app refuses one if it is
+ever pasted in, in both shapes Supabase uses: the `sb_secret_…` prefix, and a legacy JWT
+whose decoded payload carries any role other than `anon`.
 
 ### It syncs records, not blobs
 

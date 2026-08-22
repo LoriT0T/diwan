@@ -23,9 +23,16 @@
 const CFG_KEY = 'diwan.cloud';        // project url + anon key
 const SESS_KEY = 'diwan.session';     // tokens
 
-/* Filled in here once and for all, or entered in Data → Sync on first use.
-   Left empty in the repo so the app is useful before the project exists. */
-const BUILT_IN = { url: '', anon: '' };
+/* The project, wired in. Both of these are meant to be public: the URL names the
+   project and the publishable key identifies it. Neither grants anything on its own —
+   verified against this project, not merely assumed:
+     read  with only this key → []        (no rows, no leak)
+     write with only this key → 401 "new row violates row-level security policy"
+   Pasting a different project in Data → Sync overrides these. */
+const BUILT_IN = {
+  url: 'https://mnoiiidzvtezuaxlnubr.supabase.co',
+  anon: 'sb_publishable_TOmeyCO03pjpgmJO8moTHQ_j6piQ6c3'
+};
 
 const read = k => { try { return JSON.parse(localStorage.getItem(k) || 'null'); } catch { return null; } };
 const write = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); return true; } catch { return false; } };
@@ -46,13 +53,38 @@ export function setConfig(url, anon) {
   if (!ok) {
     throw new Error('That does not look like a project URL. It should be https://<something>.supabase.co — copy it from Settings → API.');
   }
-  if (anon.length < 40) throw new Error('That anon key looks too short. Copy the whole "anon public" key from Settings → API.');
-  if (/service_role/i.test(anon)) {
-    throw new Error('That is the service_role key — it bypasses every security rule and must never go in a browser. Copy the "anon public" one instead.');
+  if (anon.length < 30) throw new Error('That key looks too short. Copy the whole publishable key from Settings → API.');
+  if (secretKey(anon)) {
+    throw new Error('That is a secret key — it bypasses every security rule and must never go in a browser. Use the publishable one (sb_publishable_…) instead.');
   }
   write(CFG_KEY, { url, anon });
 }
 export function clearConfig() { localStorage.removeItem(CFG_KEY); }
+
+/** Which project this build is talking to, for the status line. */
+export const projectRef = () => {
+  const c = config();
+  const m = c && c.url.match(/^https:\/\/([a-z0-9-]+)\.supabase\.co/i);
+  return m ? m[1] : (c ? c.url : null);
+};
+
+/**
+ * Refuse a key that bypasses Row Level Security, in both the shapes Supabase uses.
+ * Getting this wrong once would put a key in a public repo that grants the whole
+ * database to anyone who reads it, so it is checked rather than trusted.
+ */
+function secretKey(k) {
+  if (/^sb_secret_/i.test(k)) return true;              // current format
+  if (/service_role/i.test(k)) return true;             // pasted by name
+  const parts = k.split('.');                            // legacy JWT: look inside it
+  if (parts.length === 3) {
+    try {
+      const p = JSON.parse(atob(parts[1].replace(/-/g, '+').replace(/_/g, '/')));
+      if (p && p.role && p.role !== 'anon') return true;
+    } catch { /* not a JWT we can read — fall through */ }
+  }
+  return false;
+}
 
 /* ---------- session ---------- */
 export const session = () => read(SESS_KEY);

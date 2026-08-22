@@ -832,8 +832,10 @@ function syncSection() {
     <div class="sect">
       <div class="sect-h"><h3>Sync across devices</h3><span class="aside">signed out</span></div>
       <div class="card pad">
-        <p class="small" style="margin:0 0 12px">Sign in and this device joins the account.
-        The first sync merges both ways, so nothing already here is lost.</p>
+        <p class="small" style="margin:0 0 12px">Project <code>${esc(C.projectRef() || '')}</code>
+        is connected. Sign in and this device joins the account — the first sync merges both
+        ways, so nothing already on it is lost. Creating the account sends a confirmation
+        email; click that before signing in.</p>
         <label class="f-lab" for="sy-mail">Email</label>
         <input id="sy-mail" class="f-input" type="email" autocomplete="username" spellcheck="false">
         <label class="f-lab" for="sy-pw">Password</label>
@@ -841,7 +843,7 @@ function syncSection() {
         <div class="btn-row">
           <button class="btn" id="sy-in">Sign in</button>
           <button class="btn quiet" id="sy-up">Create the account</button>
-          <button class="btn quiet danger" id="sy-forget">Disconnect project</button>
+          <button class="btn quiet danger" id="sy-forget">Use a different project</button>
         </div>
         <p class="tiny" id="sy-msg" style="margin-top:11px"></p>
       </div>
@@ -854,6 +856,7 @@ function syncSection() {
       <div class="card pad">
         <div class="app-s big" style="margin-bottom:12px">
           <span class="st"><span class="l">Account</span><span class="v" style="font-size:13px">${esc(C.email() || '—')}</span></span>
+          <span class="st"><span class="l">Project</span><span class="v" style="font-size:13px">${esc(C.projectRef() || '—')}</span></span>
           <span class="st"><span class="l">Records</span><span class="v">${st.lastCount || 0}</span></span>
           <span class="st"><span class="l">Waiting</span><span class="v" id="sy-pending">…</span></span>
         </div>
