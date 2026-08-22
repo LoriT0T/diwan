@@ -48,14 +48,60 @@ listing Dīwān's own sections and all six apps, each with how many of its rows 
 open. Going from Compound to Jamāl is one gesture, and it is the same gesture as going from
 Today to the Log.
 
-### What this does *not* fix
+## Sync across devices
 
-**It does nothing for using two devices.** All six apps were already on one origin, and
-storage is scoped to the origin, not the path — so a phone and a laptop were never going
-to see each other's data, and still will not. A private window gets its own throwaway
-partition for the same reason. That needs an account and a server to sync through, which
-is a different piece of work from this one. **Data → Download everything** remains the
-only way across today.
+**Data → Sync** connects a free Supabase project and every device signed into it converges.
+Setup is three steps and about five minutes: make the project, run one SQL block, paste the
+project URL and the **anon public** key.
+
+The anon key is safe in this public repo *by design*. It identifies the project and grants
+nothing; every row is guarded inside Postgres by Row Level Security —
+`auth.uid() = user_id` — so a request without a signed-in token reaches nothing at all. The
+database is the guard, not the client, which is the only arrangement that survives the
+client being readable. The **service_role** key is the opposite and the app refuses it if
+you paste it by mistake.
+
+### It syncs records, not blobs
+
+Uploading each app's storage as one lump is the obvious design and it destroys data: log a
+workout on the phone and a prayer on the laptop, and whichever uploads second wins outright.
+So every app's storage is decomposed into the smallest independently-meaningful records it
+has — `hlog/2026-08-22/wake`, `done/2026-08-22/shower`, `claims/k3f9a1` — and each travels
+on its own. Two devices editing different things on the same day are never writing the same
+record, so both simply survive.
+
+Change detection needs no help from the apps. Dīwān keeps a **shadow index** — a hash of
+every record it saw last sync — so anything whose hash moved is something this device
+changed. The six apps are untouched: they keep writing localStorage synchronously and never
+learn a cloud exists.
+
+### The rules, stated rather than hidden
+
+| | |
+|---|---|
+| changed here only | pushed |
+| changed there only | taken |
+| **changed both sides, first sync on this device** | **the cloud wins** — signing in somewhere new means joining an account, not overwriting it |
+| **changed both sides, after that** | **this device wins** — you are here, you just did it, and silently discarding it would make the whole feature untrustworthy |
+| deleted here | a tombstone is pushed, so it does not resurrect elsewhere |
+| deleted there | deleted here |
+
+Nothing is ever deleted by a first sync — the two sides are unioned.
+
+Syncs on open, on leaving an app you logged something in, and every five minutes while
+visible. **Not synced:** Compound's exercise photos and Sakina's audio and chunk cache — a
+few finished tracks are hundreds of megabytes. Track *metadata* travels, so the library
+lists it everywhere and the audio is re-made where it is wanted.
+
+### Verified
+
+Against a stand-in for Supabase's REST, before any real project existed:
+
+- shred → apply round-trips **losslessly** across all six apps
+- an empty device joining the account recovers everything, with derived fields rebuilt
+- phone logs morning light, laptop logs a ritual, neither having seen the other — **both survive**
+- an untick propagates as a tombstone and does not come back
+- two devices editing the same record converge, the one in front of you winning
 
 ## Today is a queue
 

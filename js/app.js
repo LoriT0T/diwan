@@ -9,6 +9,8 @@ import * as R from './read.js';
 import * as D from './store.js';
 import * as W from './write.js';
 import * as V from './voice.js';
+import * as C from './cloud.js';
+import * as SY from './sync.js';
 import { buildQueue, BUNDLES, PRAYER_LABEL, place, leftLabel } from './tasks.js';
 import { TIER_LABEL } from './rank.js';
 
@@ -685,6 +687,8 @@ function viewData() {
       so there is no second copy to fall out of date — and it writes back only what you tick.</p>
     </header>
 
+    ${syncSection()}
+
     <div class="sect">
       <div class="sect-h"><h3>One backup, all six</h3>
         <span class="aside">${lastB ? esc(ago(lastB)) : 'never'}</span></div>
@@ -738,6 +742,8 @@ function viewData() {
       is open on. The backup above is the way across.</div>
     </div>`;
 
+  wireSync();
+
   $('#gc-save').onclick = () => {
     const txt = $('#gc-in').value.trim();
     if (!txt) { toast('Paste the export first.', { bad: true }); return; }
@@ -762,6 +768,147 @@ function viewData() {
     } catch (e) { toast('Export failed: ' + e.message, { bad: true }); }
     btn.disabled = false; btn.textContent = 'Download everything';
   };
+}
+
+
+/* ══════════════════════════════════════════════════════════════════
+   SYNC — the account, and the state of it.
+   ══════════════════════════════════════════════════════════════════ */
+let syncing = false;
+
+async function runSync(label) {
+  if (syncing || !C.signedIn()) return;
+  syncing = true;
+  const el = $('#sy-state');
+  const say = m => { if (el) el.textContent = m; };
+  say(label || 'Syncing…');
+  const r = await SY.sync({ onStep: say });
+  syncing = false;
+  if (!r.ok) { say(''); toast(r.error, { bad: true }); return r; }
+  await refresh();
+  const bits = [];
+  if (r.took) bits.push(`${r.took} in`);
+  if (r.sent) bits.push(`${r.sent} out`);
+  if (r.removed) bits.push(`${r.removed} deleted`);
+  if (r.kept) bits.push(`${r.kept} kept local`);
+  toast(bits.length ? `Synced — ${bits.join(', ')}.` : 'Synced. Nothing had changed.');
+  if (r.notes && r.notes.length) console.info('sync notes:', r.notes);
+  return r;
+}
+
+function syncSection() {
+  const cfg = C.config();
+  const inn = C.signedIn();
+  const st = SY.state();
+
+  if (!cfg) return `
+    <div class="sect">
+      <div class="sect-h"><h3>Sync across devices</h3><span class="aside">not set up</span></div>
+      <div class="card pad">
+        <p class="small" style="margin:0 0 12px">Storage is per-browser, so a phone and a
+        laptop never see each other. Connecting a Supabase project fixes that — the six apps
+        stay exactly as they are and Dīwān does the syncing for them.</p>
+        <ol class="steps">
+          <li>Make a free project at <a href="https://supabase.com/dashboard" target="_blank" rel="noopener">supabase.com</a>.</li>
+          <li>Open its <b>SQL editor</b>, paste the block below, run it once.</li>
+          <li>In <b>Settings → API</b>, copy the <b>Project URL</b> and the <b>anon public</b> key
+            — <em>not</em> service_role — and paste them here.</li>
+        </ol>
+        <details class="sql"><summary>The SQL to run</summary><pre>${esc(C.SCHEMA_SQL)}</pre>
+          <button class="btn quiet" id="sy-copysql">Copy it</button></details>
+        <label class="f-lab" for="sy-url">Project URL</label>
+        <input id="sy-url" class="f-input" placeholder="https://xxxxxxxx.supabase.co" spellcheck="false">
+        <label class="f-lab" for="sy-anon">anon public key</label>
+        <input id="sy-anon" class="f-input" placeholder="eyJhbGciOi…" spellcheck="false">
+        <div class="btn-row"><button class="btn" id="sy-save">Connect</button></div>
+        <p class="tiny" style="margin-top:11px">Both of these are safe in a public repo by
+        design — the anon key identifies the project and grants nothing. Every row is guarded
+        inside Postgres by <code>auth.uid() = user_id</code>, so without a signed-in token it
+        reaches nothing. The service_role key is the opposite and must never be pasted here.</p>
+      </div>
+    </div>`;
+
+  if (!inn) return `
+    <div class="sect">
+      <div class="sect-h"><h3>Sync across devices</h3><span class="aside">signed out</span></div>
+      <div class="card pad">
+        <p class="small" style="margin:0 0 12px">Sign in and this device joins the account.
+        The first sync merges both ways, so nothing already here is lost.</p>
+        <label class="f-lab" for="sy-mail">Email</label>
+        <input id="sy-mail" class="f-input" type="email" autocomplete="username" spellcheck="false">
+        <label class="f-lab" for="sy-pw">Password</label>
+        <input id="sy-pw" class="f-input" type="password" autocomplete="current-password">
+        <div class="btn-row">
+          <button class="btn" id="sy-in">Sign in</button>
+          <button class="btn quiet" id="sy-up">Create the account</button>
+          <button class="btn quiet danger" id="sy-forget">Disconnect project</button>
+        </div>
+        <p class="tiny" id="sy-msg" style="margin-top:11px"></p>
+      </div>
+    </div>`;
+
+  return `
+    <div class="sect">
+      <div class="sect-h"><h3>Sync across devices</h3>
+        <span class="aside">${st.lastAt ? esc(ago(R.iso(new Date(st.lastAt)))) : 'never synced'}</span></div>
+      <div class="card pad">
+        <div class="app-s big" style="margin-bottom:12px">
+          <span class="st"><span class="l">Account</span><span class="v" style="font-size:13px">${esc(C.email() || '—')}</span></span>
+          <span class="st"><span class="l">Records</span><span class="v">${st.lastCount || 0}</span></span>
+          <span class="st"><span class="l">Waiting</span><span class="v" id="sy-pending">…</span></span>
+        </div>
+        <p class="small" id="sy-state" style="margin:0 0 10px;min-height:1.2em"></p>
+        <div class="btn-row">
+          <button class="btn" id="sy-now">Sync now</button>
+          <button class="btn quiet" id="sy-out">Sign out</button>
+        </div>
+        <p class="tiny" style="margin-top:11px">Syncs on its own when the hub opens, when you
+        leave an app you logged something in, and every few minutes while it is open. Audio
+        tracks and exercise photos are left out — metadata for a track travels, the audio is
+        re-made where it is wanted.</p>
+      </div>
+    </div>`;
+}
+
+function wireSync() {
+  $('#sy-copysql') && ($('#sy-copysql').onclick = async () => {
+    try { await navigator.clipboard.writeText(C.SCHEMA_SQL); toast('SQL copied.'); }
+    catch { toast('Select it and copy by hand.', { bad: true }); }
+  });
+  $('#sy-save') && ($('#sy-save').onclick = () => {
+    try { C.setConfig($('#sy-url').value, $('#sy-anon').value); toast('Project connected.'); paint(); }
+    catch (e) { toast(e.message, { bad: true }); }
+  });
+  $('#sy-forget') && ($('#sy-forget').onclick = () => { C.clearConfig(); C.signOut(); toast('Disconnected.'); paint(); });
+  $('#sy-out') && ($('#sy-out').onclick = () => {
+    C.signOut(); SY.forget(); toast('Signed out. Nothing on this device was deleted.'); paint();
+  });
+
+  const creds = () => [$('#sy-mail').value.trim(), $('#sy-pw').value];
+  const msg = m => { const e = $('#sy-msg'); if (e) e.textContent = m; };
+
+  $('#sy-in') && ($('#sy-in').onclick = async () => {
+    const [m, pw] = creds();
+    if (!m || !pw) { msg('Email and password, both.'); return; }
+    msg('Signing in…');
+    try { await C.signIn(m, pw); paint(); await runSync('First sync — merging both ways…'); }
+    catch (e) { msg(e.message); }
+  });
+  $('#sy-up') && ($('#sy-up').onclick = async () => {
+    const [m, pw] = creds();
+    if (!m || pw.length < 8) { msg('Email, and a password of at least 8 characters.'); return; }
+    msg('Creating…');
+    try {
+      const r = await C.signUp(m, pw);
+      if (r.confirm) { msg('Account made. Confirm the email Supabase just sent, then sign in.'); return; }
+      paint(); await runSync('First sync…');
+    } catch (e) { msg(e.message); }
+  });
+  $('#sy-now') && ($('#sy-now').onclick = () => runSync());
+
+  if ($('#sy-pending')) SY.pending().then(n => {
+    const e = $('#sy-pending'); if (e) e.textContent = n == null ? 'all' : String(n);
+  }).catch(() => {});
 }
 
 /* ══════════════════════════════════════════════════════════════════
@@ -795,7 +942,12 @@ window.addEventListener('hashchange', () => {
   const nowFramed = /^#\/in\//.test(location.hash);
   /* On the way out of an app, re-read before painting — so the queue shows what was
      just done in there rather than what was true when you went in. */
-  if (wasFramed && !nowFramed) { wasFramed = false; refresh(); return; }
+  if (wasFramed && !nowFramed) {
+    wasFramed = false;
+    /* Left an app you may have logged something in — push it before anything else. */
+    refresh().then(() => { if (C.signedIn()) runSync(); });
+    return;
+  }
   wasFramed = nowFramed;
   paint();
 });
@@ -810,7 +962,12 @@ document.addEventListener('visibilitychange', () => {
 app.innerHTML = `<header class="masthead"><p class="eyebrow">Reading the apps…</p>
   <h1>Dīwān</h1><p class="sub">Opening Compound, Jamāl, Anbīq, Sakina, Charisma Gym and Āfāq where they sit.</p></header>`;
 
-refresh().catch(e => {
+/* Sync as soon as the page is usable, not before — the queue should paint from what is
+   already here rather than waiting on the network, and then quietly correct itself. */
+refresh().then(() => {
+  if (C.signedIn()) runSync();
+  setInterval(() => { if (C.signedIn() && document.visibilityState === 'visible' && !syncing) runSync(); }, 5 * 60_000);
+}).catch(e => {
   app.innerHTML = `<header class="masthead"><p class="eyebrow">Something broke</p>
     <h1>Dīwān</h1><p class="sub">The hub could not finish reading: ${esc(e.message || e)}</p></header>
     <div class="note">Every reader is meant to fail on its own without taking the page down, so

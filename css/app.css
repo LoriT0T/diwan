@@ -488,3 +488,29 @@ body.framed .nav{display:none}
 .frame-bar .fb-menu:active{background:var(--card-2);color:var(--tx)}
 
 @media(prefers-reduced-motion:reduce){#drawer,#scrim{transition:none}}
+
+/* ── sync setup ─────────────────────────────────────── */
+.f-lab{
+  display:block;font-size:10.5px;letter-spacing:.1em;text-transform:uppercase;
+  color:var(--tx-3);margin:13px 0 5px;font-weight:600;
+}
+.f-input{
+  width:100%;background:var(--bg-2);color:var(--tx);border:1px solid var(--line-2);
+  border-radius:var(--r-sm);padding:10px 12px;font-family:var(--sans);font-size:14px;
+}
+.f-input:focus{outline:2px solid var(--tx-3);outline-offset:1px}
+.steps{margin:0 0 12px;padding-left:20px;font-size:13px;color:var(--tx-2);line-height:1.6}
+.steps li{margin-bottom:4px}
+.steps a{color:var(--tx)}
+.sql{margin:0 0 4px}
+.sql summary{
+  font-size:12.5px;color:var(--tx-2);cursor:pointer;padding:8px 0;
+  list-style:none;display:flex;align-items:center;gap:6px;
+}
+.sql summary::before{content:'▸';color:var(--tx-3)}
+.sql[open] summary::before{content:'▾'}
+.sql pre{
+  background:var(--bg-2);border:1px solid var(--line);border-radius:var(--r-sm);
+  padding:12px;overflow-x:auto;font-family:var(--mono);font-size:11px;
+  line-height:1.55;color:var(--tx-2);margin:0 0 9px;
+}
