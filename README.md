@@ -42,6 +42,12 @@ this origin, so `../compound/` is *the app* — not a copy of it. Which means:
 Deep links carry through: `#/in/jamal~%23%2Frituals` mounts Jamāl at its Rituals page, and
 every "open" in the queue points at the right page of the right app.
 
+**A side menu moves you between them.** Inside an app, Dīwān's bottom bar is hidden — the
+app has its own and two stacked bars is one too many — so ☰ in the frame bar opens a drawer
+listing Dīwān's own sections and all six apps, each with how many of its rows are still
+open. Going from Compound to Jamāl is one gesture, and it is the same gesture as going from
+Today to the Log.
+
 ### What this does *not* fix
 
 **It does nothing for using two devices.** All six apps were already on one origin, and

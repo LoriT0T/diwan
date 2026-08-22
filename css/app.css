@@ -413,3 +413,78 @@ body.framed .nav{display:none}
 
 .app-hit{display:block;text-decoration:none;color:inherit}
 .lnk.strong{color:var(--hue);border-color:var(--hue)}
+
+/* ══════════════════════════════════════════════════════════════════
+   Side menu — the way between apps once you are inside one.
+   ══════════════════════════════════════════════════════════════════ */
+#menu{
+  position:fixed;left:12px;top:calc(12px + var(--safe-t));z-index:48;
+  width:38px;height:38px;border-radius:11px;
+  background:color-mix(in srgb,var(--card) 88%,transparent);
+  backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);
+  border:1px solid var(--line-2);color:var(--tx-2);
+  font-size:15px;line-height:1;cursor:pointer;display:grid;place-items:center;
+}
+#menu:active{background:var(--card-2);color:var(--tx)}
+
+#scrim{
+  position:fixed;inset:0;z-index:55;background:rgba(0,0,0,.55);
+  opacity:0;transition:opacity .18s ease;
+}
+#scrim.open{opacity:1}
+
+#drawer{
+  position:fixed;left:0;top:0;bottom:0;z-index:56;
+  width:min(272px,82vw);display:flex;flex-direction:column;
+  background:var(--bg-2);border-right:1px solid var(--line);
+  transform:translateX(-100%);transition:transform .2s cubic-bezier(.3,.7,.3,1);
+  padding:calc(10px + var(--safe-t)) 0 calc(10px + var(--safe-b));
+  overflow-y:auto;overscroll-behavior:contain;
+}
+#drawer.open{transform:none}
+
+.dw-head{display:flex;align-items:center;justify-content:space-between;padding:4px 10px 12px 16px}
+.dw-title{font-size:17px;font-weight:600;letter-spacing:-.015em;color:var(--tx)}
+.dw-x{
+  width:34px;height:34px;border-radius:9px;background:transparent;border:0;
+  color:var(--tx-3);font-size:14px;cursor:pointer;display:grid;place-items:center;
+}
+.dw-x:active{background:var(--card-2);color:var(--tx)}
+
+.dw-sect,.dw-apps{display:flex;flex-direction:column;padding:0 8px}
+.dw-row{
+  display:flex;align-items:center;gap:11px;padding:10px 10px;border-radius:10px;
+  text-decoration:none;color:var(--tx-2);font-size:14.5px;
+}
+.dw-row .dw-ico{width:18px;text-align:center;font-size:13px;color:var(--tx-3)}
+.dw-row.on{background:var(--card-2);color:var(--tx);font-weight:600}
+.dw-row:active{background:var(--card)}
+
+.dw-lab{
+  font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:var(--tx-3);
+  padding:16px 18px 7px;font-weight:600;
+}
+.dw-app{
+  display:flex;align-items:center;gap:11px;padding:10px;border-radius:10px;
+  text-decoration:none;color:var(--tx-2);font-size:14.5px;
+}
+.dw-app .dw-dot{width:8px;height:8px;flex:none;border-radius:2px;background:var(--hue)}
+.dw-app .dw-n{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.dw-app .dw-count{
+  font-size:11px;font-weight:700;color:var(--hue);
+  border:1px solid var(--hue);border-radius:999px;padding:1px 7px;
+}
+.dw-app.on{background:var(--card-2);color:var(--tx)}
+.dw-app.on .dw-n{font-weight:600;color:var(--hue)}
+.dw-app:active{background:var(--card)}
+
+.dw-foot{font-size:11px;color:var(--tx-3);line-height:1.5;padding:16px 18px 4px;margin:auto 0 0}
+
+.frame-bar .fb-menu{
+  width:36px;height:36px;flex:none;background:transparent;border:0;
+  color:var(--tx-2);font-size:15px;border-radius:9px;cursor:pointer;
+  display:grid;place-items:center;
+}
+.frame-bar .fb-menu:active{background:var(--card-2);color:var(--tx)}
+
+@media(prefers-reduced-motion:reduce){#drawer,#scrim{transition:none}}

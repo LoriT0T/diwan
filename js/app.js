@@ -418,6 +418,78 @@ function viewApp(id) {
 }
 
 
+
+/* ══════════════════════════════════════════════════════════════════
+   The side menu.
+
+   Inside a mounted app Dīwān's bottom bar is hidden — the app has its own and two
+   stacked navigation bars is one too many — so this is how you move between apps
+   without going back out first. It is the same list everywhere, so the way from
+   Compound to Jamāl is the same gesture as the way from Today to the Log.
+
+   Each app carries how many of its rows are still open, because the point of a
+   menu here is to choose where to go next, and that number is the reason.
+   ══════════════════════════════════════════════════════════════════ */
+const SECTIONS = [
+  { hash: '#/',     label: 'Today', ico: '◈' },
+  { hash: '#/log',  label: 'Log',   ico: '▦' },
+  { hash: '#/apps', label: 'Apps',  ico: '◫' },
+  { hash: '#/data', label: 'Data',  ico: '↧' }
+];
+
+function drawerHTML() {
+  const here = location.hash || '#/';
+  const inApp = (here.match(/^#\/in\/([a-z]+)/) || [])[1];
+
+  const apps = (SNAP ? SNAP.apps : []).map(a => {
+    const open = Q ? Q.all.filter(t => t.app === a.id && !t.done).length : 0;
+    const on = inApp === a.id;
+    return `<a class="dw-app${on ? ' on' : ''}" style="--hue:${HUE(a.id)}" href="#/in/${a.id}">
+      <i class="dw-dot"></i>
+      <span class="dw-n">${esc(a.name)}</span>
+      ${open ? `<span class="dw-count">${open}</span>` : ''}
+    </a>`;
+  }).join('');
+
+  return `
+    <div class="dw-head">
+      <span class="dw-title">Dīwān</span>
+      <button class="dw-x" id="dw-close" aria-label="Close menu">✕</button>
+    </div>
+    <nav class="dw-sect">
+      ${SECTIONS.map(s => `<a class="dw-row${here === s.hash ? ' on' : ''}" href="${s.hash}">
+        <span class="dw-ico">${s.ico}</span>${s.label}</a>`).join('')}
+    </nav>
+    <div class="dw-lab">Apps</div>
+    <nav class="dw-apps">${apps}</nav>
+    <p class="dw-foot">Each one runs inside Dīwān. ↗ in the bar opens it in its own tab.</p>`;
+}
+
+function openDrawer() {
+  const d = $('#drawer'), sc = $('#scrim');
+  d.innerHTML = drawerHTML();
+  d.hidden = false; sc.hidden = false;
+  /* Force a reflow rather than waiting for a frame. requestAnimationFrame is paused
+     in a backgrounded tab, so a drawer opened as the tab loses focus would stay
+     stuck off-screen with no way to see it. Reading offsetWidth flushes layout
+     synchronously, which is all the transition needs to have a start state. */
+  void d.offsetWidth;
+  d.classList.add('open'); sc.classList.add('open');
+  $('#menu')?.setAttribute('aria-expanded', 'true');
+  $('#dw-close').onclick = closeDrawer;
+  d.querySelectorAll('a').forEach(a => a.addEventListener('click', closeDrawer));
+}
+function closeDrawer() {
+  const d = $('#drawer'), sc = $('#scrim');
+  d.classList.remove('open'); sc.classList.remove('open');
+  $('#menu')?.setAttribute('aria-expanded', 'false');
+  setTimeout(() => { d.hidden = true; sc.hidden = true; }, 200);
+}
+const drawerOpen = () => !$('#drawer').hidden;
+
+document.addEventListener('keydown', e => { if (e.key === 'Escape' && drawerOpen()) closeDrawer(); });
+document.addEventListener('click', e => { if (e.target && e.target.id === 'scrim') closeDrawer(); });
+
 /* ══════════════════════════════════════════════════════════════════
    INSIDE — an app, mounted in Dīwān.
 
@@ -442,9 +514,11 @@ function viewFrame(id, tail) {
   const src = relPath(a) + (tail ? decodeURIComponent(tail) : '');
 
   document.body.classList.add('framed');
+  const mb = $('#menu'); if (mb) mb.hidden = true;
   app.innerHTML = `
     <div class="frame-wrap">
       <div class="frame-bar" style="--hue:${HUE(a.id)}">
+        <button class="fb-menu" id="fb-menu" aria-label="Open menu">☰</button>
         <a class="fb-back" href="#/" aria-label="Back to Dīwān">←</a>
         <span class="fb-name">${esc(a.name)}</span>
         <span class="fb-sp"></span>
@@ -453,6 +527,7 @@ function viewFrame(id, tail) {
       </div>
       <iframe class="frame" src="${esc(src)}" title="${esc(a.name)}"></iframe>
     </div>`;
+  $('#fb-menu').onclick = openDrawer;
 }
 
 /* Anything logged inside a mounted app is a change to data this hub reads. The
@@ -705,6 +780,8 @@ function paint() {
   else if (hash === '#/data') { nav = 'data'; viewData(); }
   else viewToday();
   document.querySelectorAll('.nav a').forEach(a => a.classList.toggle('on', a.dataset.nav === nav));
+  const mb = $('#menu');
+  if (mb) { mb.hidden = false; mb.onclick = openDrawer; }
   window.scrollTo(0, 0);
 }
 
