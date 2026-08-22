@@ -9,7 +9,7 @@ import * as R from './read.js';
 import * as D from './store.js';
 import * as W from './write.js';
 import * as V from './voice.js';
-import { buildQueue, BUNDLES, PRAYER_LABEL, place } from './tasks.js';
+import { buildQueue, BUNDLES, PRAYER_LABEL, place, leftLabel } from './tasks.js';
 import { TIER_LABEL } from './rank.js';
 
 const $ = (s, r = document) => r.querySelector(s);
@@ -22,6 +22,21 @@ const APP_IDS = ['compound', 'jamal', 'anbiq', 'sakina', 'gc', 'afaq'];
 const APP_NAME = {
   compound: 'Compound', jamal: 'Jamāl', anbiq: 'Anbīq',
   sakina: 'Sakina', gc: 'Charisma Gym', afaq: 'Āfāq'
+};
+
+/* Each app's folder relative to Dīwān's own. Relative rather than absolute so the
+   frame is same-origin wherever this is served from — the production host, a local
+   rig, anywhere. An absolute URL silently becomes cross-origin off production and
+   the frame turns into a black box the parent cannot read. */
+const relPath = a => '../' + a.url.replace(/^https?:\/\/[^/]+\//, '');
+
+const inward = (url, appId) => {
+  /* Turn an app's absolute URL into a Dīwān route that mounts it, keeping any
+     deep link (#/rituals, prayer/) as an encoded tail. */
+  const a = SNAP && SNAP.apps.find(x => x.id === appId);
+  if (!a || !url || url.startsWith('#')) return url;
+  const tail = url.startsWith(a.url) ? url.slice(a.url.length) : '';
+  return `#/in/${appId}` + (tail ? '~' + encodeURIComponent(tail) : '');
 };
 
 let SNAP = null;   // per-app reports
@@ -147,11 +162,12 @@ function renderQueue() {
 /* The top of the list, enlarged. Same row, more room — it is not a different
    kind of thing, it is just the one you are on. */
 function headCard(t) {
-  const time = t.at ? hhmm(t.at) : (t.cadence || 'any time');
+  const time = t.at ? hhmm(t.at)
+    : (t.daily ? 'Today' : leftLabel(t.left, t.over) || t.cadence || 'Any time');
   const late = t.at && t.at.getTime() <= Date.now();
   return `<div class="act head" style="--hue:${HUE(t.app)}" data-key="${esc(t.key)}">
     <div class="act-top">
-      <span class="act-tier">${esc(t.at ? (late ? 'Now · ' + time : 'At ' + time) : (TIER_LABEL[t.tier] || 'Any time'))}</span>
+      <span class="act-tier">${esc(t.at ? (late ? 'Now · ' + time : 'At ' + time) : time)}</span>
       <span class="act-app">${esc(APP_NAME[t.app] || t.app)}</span>
       ${t.note ? `<span class="act-app">${esc(t.note)}</span>` : ''}
     </div>
@@ -160,7 +176,7 @@ function headCard(t) {
     <div class="act-btns">
       ${t.action ? `<button class="go" data-tick="${esc(t.key)}">Done <span class="arr">✓</span></button>` : ''}
       ${t.alt ? `<button class="btn alt" data-alt="${esc(t.key)}">${esc(t.alt.label)}</button>` : ''}
-      <a class="btn quiet" href="${esc(t.href)}" target="_blank" rel="noopener">${esc(t.cta || 'Open ' + (APP_NAME[t.app] || ''))} →</a>
+      <a class="btn quiet" href="${esc(inward(t.href, t.app))}">${esc(t.cta || 'Open ' + (APP_NAME[t.app] || ''))} →</a>
     </div>
   </div>`;
 }
@@ -174,12 +190,15 @@ function group(title, list) {
 }
 
 function row(t) {
-  const time = t.at ? hhmm(t.at) : (t.mins ? `${t.mins}m` : '');
+  /* A once-a-day thing says "today"; a window closing says how much of it is left. */
+  const countdown = t.at ? '' : (t.daily ? 'today' : leftLabel(t.left, t.over));
+  const time = t.at ? hhmm(t.at) : (countdown || (t.mins ? `${t.mins}m` : ''));
+  const urgent = !t.at && !t.daily && (t.over || t.tight || (t.left != null && t.left <= 0));
   return `<div class="trow${t.isNote ? ' note-row' : ''}" style="--hue:${HUE(t.app)}" data-key="${esc(t.key)}">
     ${t.action
       ? `<button class="tick" data-tick="${esc(t.key)}" aria-label="Mark ${esc(t.label)} done"></button>`
-      : `<a class="tick link" href="${esc(t.href)}" target="_blank" rel="noopener" aria-label="Open ${esc(t.label)}">→</a>`}
-    <span class="t-when">${esc(time)}</span>
+      : `<a class="tick link" href="${esc(inward(t.href, t.app))}" aria-label="Open ${esc(t.label)}">→</a>`}
+    <span class="t-when${urgent ? ' urgent' : ''}">${esc(time)}</span>
     <span class="t-body">
       <span class="t-label">${esc(t.label)}</span>
       <span class="t-note">${esc(t.note)}${t.cadence ? ' · ' + esc(t.cadence) : ''}${t.brief && t.isNote ? ' · ' + esc(t.brief.slice(0, 80)) : ''}</span>
@@ -350,7 +369,7 @@ function viewApp(id) {
     <div class="sect">
       <div class="sect-h"><h3>Raised</h3><span class="aside">${notes.length}</span></div>
       <div class="rows">${notes.map(p => `
-        <a class="trow note-row" style="--hue:${hue}" href="${esc(p.href)}"${p.href.startsWith('#') ? '' : ' target="_blank" rel="noopener"'}>
+        <a class="trow note-row" style="--hue:${hue}" href="${esc(inward(p.href, a.id))}">
           <span class="tick link">→</span>
           <span class="t-when">${esc(TIER_LABEL[p.tier] || '')}</span>
           <span class="t-body"><span class="t-label">${esc(p.why)}</span>
@@ -390,11 +409,57 @@ function viewApp(id) {
     <div class="sect">
       <div class="sect-h"><h3>Go to</h3></div>
       <div class="links">${a.links.map(l =>
-        `<a class="lnk" href="${esc(l.href)}" target="_blank" rel="noopener">${esc(l.label)}</a>`).join('')}</div>
+        `<a class="lnk" href="${esc(inward(l.href, a.id))}">${esc(l.label)}</a>`).join('')}</div>
+      <p class="tiny" style="margin:10px 2px 0">Opens inside Dīwān. The ↗ in the bar there
+      puts it in its own tab if you want it full screen.</p>
     </div>`;
 
   wireRows();
 }
+
+
+/* ══════════════════════════════════════════════════════════════════
+   INSIDE — an app, mounted in Dīwān.
+
+   The apps are not copied here and their source is not moved. Every one of them
+   already lives on this origin, so an iframe of `../compound/` is the same app,
+   the same code, the same storage — just framed by this page instead of a browser
+   tab. That is the whole trick, and it is why this costs nothing:
+
+     · nothing breaks. Existing URLs still work, home-screen installs still work,
+       and each app keeps its own repo, its own deploy and its own service worker.
+     · nothing duplicates. There is no second copy to drift from the first, which
+       is the failure this ecosystem is built to avoid.
+     · same origin means the frame is not a black box. When the app inside writes,
+       the parent hears the storage event and knows the queue is stale.
+
+   Copying the source in would have bought none of that and cost all of it —
+   Sakina alone is a Next.js build with its own basePath.
+   ══════════════════════════════════════════════════════════════════ */
+function viewFrame(id, tail) {
+  const a = SNAP.apps.find(x => x.id === id);
+  if (!a) { location.hash = '#/apps'; return; }
+  const src = relPath(a) + (tail ? decodeURIComponent(tail) : '');
+
+  document.body.classList.add('framed');
+  app.innerHTML = `
+    <div class="frame-wrap">
+      <div class="frame-bar" style="--hue:${HUE(a.id)}">
+        <a class="fb-back" href="#/" aria-label="Back to Dīwān">←</a>
+        <span class="fb-name">${esc(a.name)}</span>
+        <span class="fb-sp"></span>
+        <a class="fb-out" href="${esc(src)}" target="_blank" rel="noopener"
+           aria-label="Open in its own tab">↗</a>
+      </div>
+      <iframe class="frame" src="${esc(src)}" title="${esc(a.name)}"></iframe>
+    </div>`;
+}
+
+/* Anything logged inside a mounted app is a change to data this hub reads. The
+   storage event does fire in the parent when a same-origin frame writes, but relying
+   on it means trusting one event not to be missed; leaving an app is rare and a
+   re-read is entirely local, so the exit just always re-reads. Cheap and never wrong. */
+let wasFramed = false;
 
 /* ══════════════════════════════════════════════════════════════════
    LOG
@@ -488,20 +553,27 @@ function viewApps() {
           `<span class="st"><span class="l">${esc(s.l)}</span>
             <span class="v ${s.tone === 'open' ? 'open' : ''}">${esc(s.v)}</span></span>`).join('')}</div>`
       : `<p class="app-cold">${esc(a.ok ? 'Nothing logged on this device yet.' : a.reason)}</p>`;
-    return `<a class="app" style="--hue:${HUE(a.id)}" href="#/app/${a.id}">
-      <div class="app-h"><span class="app-n">${esc(a.name)}</span>
-        ${openN ? `<span class="badge">${openN} due</span>` : '<span class="app-ar">' + esc(a.arabic || '') + '</span>'}</div>
-      <div class="app-t">${esc(a.tag)}</div>
-      ${stats}
-    </a>`;
+    return `<div class="app" style="--hue:${HUE(a.id)}">
+      <a class="app-hit" href="#/app/${a.id}">
+        <div class="app-h"><span class="app-n">${esc(a.name)}</span>
+          ${openN ? `<span class="badge">${openN} due</span>` : '<span class="app-ar">' + esc(a.arabic || '') + '</span>'}</div>
+        <div class="app-t">${esc(a.tag)}</div>
+        ${stats}
+      </a>
+      <div class="links">
+        <a class="lnk strong" href="#/in/${a.id}">Open it here</a>
+        <a class="lnk" href="#/app/${a.id}">What's due</a>
+      </div>
+    </div>`;
   }).join('');
 
   app.innerHTML = `
     <header class="masthead">
       <p class="eyebrow">The six, and the way in</p>
       <h1>Apps</h1>
-      <p class="sub">Tap one for what is important inside it right now — what it is asking for,
-      what its own engine is saying, and every page one tap further.</p>
+      <p class="sub">Every app runs inside this one. <b>Open it here</b> mounts the real app —
+      same code, same data, framed by Dīwān instead of a browser tab. <b>What's due</b> shows
+      what it is asking for and what its own engine is saying.</p>
     </header>
     <div class="grid">${cards}</div>`;
 }
@@ -622,8 +694,11 @@ function viewData() {
    ══════════════════════════════════════════════════════════════════ */
 function paint() {
   const hash = location.hash || '#/';
+  document.body.classList.remove('framed');
+  const inFrame = hash.match(/^#\/in\/([a-z]+)(?:~(.*))?$/);
   const m = hash.match(/^#\/app\/([a-z]+)$/);
   let nav = 'today';
+  if (inFrame) { viewFrame(inFrame[1], inFrame[2]); return; }
   if (m) { nav = 'apps'; viewApp(m[1]); }
   else if (hash === '#/log') { nav = 'log'; viewLog(); }
   else if (hash === '#/apps') { nav = 'apps'; viewApps(); }
@@ -639,7 +714,14 @@ async function refresh() {
   paint();
 }
 
-window.addEventListener('hashchange', paint);
+window.addEventListener('hashchange', () => {
+  const nowFramed = /^#\/in\//.test(location.hash);
+  /* On the way out of an app, re-read before painting — so the queue shows what was
+     just done in there rather than what was true when you went in. */
+  if (wasFramed && !nowFramed) { wasFramed = false; refresh(); return; }
+  wasFramed = nowFramed;
+  paint();
+});
 
 let lastRead = Date.now();
 document.addEventListener('visibilitychange', () => {

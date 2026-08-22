@@ -378,3 +378,38 @@ textarea:focus{outline:2px solid var(--tx-3);outline-offset:1px}
   .trow{grid-template-columns:auto 34px 1fr auto 3px;gap:0 8px}
   .t-alt{display:none}
 }
+
+/* A deadline that has run out reads as one, without relying on colour alone —
+   the words change too ("2d over", not a red "2d"). */
+.t-when.urgent{color:var(--warn);font-weight:600}
+
+/* ══════════════════════════════════════════════════════════════════
+   An app mounted inside Dīwān.
+   Fixed rather than in-flow so it escapes the page's measure and padding, and
+   Dīwān's own nav is hidden while it is up — the app inside has its own, and two
+   stacked navigation bars is one too many. The slim bar is the only thing this
+   page adds: back, the name, and a way out to a full tab.
+   ══════════════════════════════════════════════════════════════════ */
+body.framed{padding-bottom:0;overflow:hidden}
+body.framed .nav{display:none}
+
+.frame-wrap{
+  position:fixed;inset:0;display:flex;flex-direction:column;
+  z-index:45;background:var(--bg);padding-top:var(--safe-t);
+}
+.frame-bar{
+  flex:none;display:flex;align-items:center;gap:10px;
+  height:44px;padding:0 6px 0 4px;
+  background:var(--bg-2);border-bottom:1px solid var(--line);
+}
+.frame-bar .fb-back,.frame-bar .fb-out{
+  width:36px;height:36px;flex:none;display:grid;place-items:center;
+  color:var(--tx-2);text-decoration:none;font-size:17px;border-radius:9px;
+}
+.frame-bar .fb-back:active,.frame-bar .fb-out:active{background:var(--card-2);color:var(--tx)}
+.frame-bar .fb-name{font-size:14px;font-weight:600;color:var(--hue);letter-spacing:-.01em}
+.frame-bar .fb-sp{flex:1}
+.frame{flex:1;width:100%;border:0;display:block;background:var(--bg)}
+
+.app-hit{display:block;text-decoration:none;color:inherit}
+.lnk.strong{color:var(--hue);border-color:var(--hue)}

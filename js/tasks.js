@@ -164,7 +164,10 @@ export async function buildQueue(snap) {
           note: (H.DOMAINS[i.dom] || {}).label || i.dom, domain: i.dom,
           brief: i.brief || '', at: when, slot: when ? null : 'any',
           done, tier: i.id === 'wake' ? 'foundation' : i.dom === 'test' ? 'reality' : 'due',
-          cadence: daily ? null : cadenceNote(i, S),
+          ...(daily ? { cadence: null } : (() => {
+            const c = cadenceNote(i, S);
+            return { cadence: c.note, left: c.left, over: c.over, short: c.short, tight: c.tight };
+          })()),
           words: w(i.id, [i.name.toLowerCase()]),
           action: { kind: 'compound.h', date, id: i.id },
           href: comp.url
@@ -212,6 +215,9 @@ export async function buildQueue(snap) {
           key: 'jamal:' + r.id, app: 'jamal', label: r.name, note: 'Ritual',
           domain: 'ritual', mins: r.mins, block: r.slot,
           at: dormant ? null : when, slot: when ? null : 'any', done, dormant, tier: 'due',
+          /* dueIn is already a day count: 0 is today, negative is that many days late. */
+          left: dormant ? n : (n <= 0 ? n : null), over: !dormant && n < 0,
+          cadence: (!dormant && n < 0) ? `${-n}d past its cadence` : null,
           brief: canTick ? (r.kicker || '') : 'Open Jamāl once and these become tickable here',
           words: w(r.id, [r.name.toLowerCase()]),
           action: canTick ? { kind: 'jamal.ritual', date, id: r.id } : null,
@@ -290,7 +296,7 @@ export async function buildQueue(snap) {
         brief: openBooks.length
           ? `${openBooks[0].cursor}/${openBooks[0].pages} pages · target ${st.set.pagesPerDay || 30}/day`
           : 'Nothing open on the Shelf yet',
-        at: null, slot: 'any', done: readToday, tier: 'due',
+        at: null, slot: 'any', done: readToday, tier: 'due', left: 0, daily: true,
         words: ['read', 'reading', 'pages'],
         action: null, href: anb.url + (openBooks.length ? '' : '#shelf'),
         cta: openBooks.length ? 'Log pages' : 'Open the Shelf'
@@ -339,21 +345,21 @@ export async function buildQueue(snap) {
     out.push({
       key: 'gc:warmup', app: 'gc', label: 'Warm up', note: 'Voice',
       domain: 'warmup', brief: 'Articulators, consonants, twisters — it is a timed drill',
-      at: null, slot: 'any', done: drillToday, tier: 'due',
+      at: null, slot: 'any', done: drillToday, tier: 'due', left: 0, daily: true,
       words: ['warm up', 'warmup', 'twisters', 'articulation', 'drills'],
       action: null, href: gc.url + '#warmup', cta: 'Run the drill'
     });
     out.push({
       key: 'gc:words', app: 'gc', label: `Words — ${vocabToday}/${wantWords}`, note: 'Vocabulary',
       domain: 'words', brief: 'Recall counts only on distinct days, so it has to be done there',
-      at: null, slot: 'any', done: vocabToday >= wantWords, tier: 'due',
+      at: null, slot: 'any', done: vocabToday >= wantWords, tier: 'due', left: 0, daily: true,
       words: ['words', 'vocab', 'vocabulary'],
       action: null, href: gc.url + '#vocab', cta: 'Open Words'
     });
     out.push({
       key: 'gc:rep', app: 'gc', label: 'A rep', note: 'Reps',
       domain: 'rep', brief: repsToday ? `${repsToday} logged today` : 'One conversation you started. Volume is the input you control.',
-      at: null, slot: 'any', done: repsToday > 0, tier: 'due',
+      at: null, slot: 'any', done: repsToday > 0, tier: 'due', left: 0, daily: true,
       words: ['rep', 'conversation', 'talked to', 'spoke to'],
       action: raw ? { kind: 'gc.rep' } : null, href: gc.url + '#field',
       cta: raw ? undefined : 'Open Charisma Gym'
@@ -447,13 +453,57 @@ function dueIn(r, st, t) {
   return 0;
 }
 
+/**
+ * How long is left on something with no time of day.
+ *
+ * "Any time this week" is only useful if you can see which end of the week you are at.
+ * A weekly item counts down to Sunday night; a fortnightly, monthly or quarterly one
+ * counts from when it was last actually done, so the number is a real deadline rather
+ * than a calendar boundary.
+ *
+ * Returns { note, left, over } — `left` in whole days, negative when overdue.
+ */
 function cadenceNote(i, S) {
   const t = iso();
-  if (i.cad.t === 'w') return `${S.weekCount(t, i.id)}/${i.cad.n} this week`;
-  if (i.cad.t === 'f') return S.doneInLast(t, i.id, 14) ? 'done this fortnight' : 'due this fortnight';
-  if (i.cad.t === 'm') return S.doneInLast(t, i.id, 30) ? 'done this month' : 'due this month';
-  if (i.cad.t === 'q') return S.doneInLast(t, i.id, 90) ? 'done this quarter' : 'due this quarter';
-  return '';
+  const dow = (new Date(t + 'T00:00').getDay() + 6) % 7;      // Monday = 0
+  const restOfWeek = 7 - dow;                                  // today counts
+
+  if (i.cad.t === 'w') {
+    const got = S.weekCount(t, i.id), need = i.cad.n;
+    const short = Math.max(0, need - got);
+    /* A weekly target is never "overdue" — it runs out at Sunday night. What can happen
+       is that it stops being reachable, and that is a different sentence: the countdown
+       stays honest ("2 days left") and the note says the target is already out of reach. */
+    const tight = short > restOfWeek;
+    return {
+      note: `${got}/${need} this week` + (tight ? ` · ${short} in ${restOfWeek} days is not on` : ''),
+      left: restOfWeek, short, tight, over: false
+    };
+  }
+
+  const span = i.cad.t === 'f' ? 14 : i.cad.t === 'm' ? 30 : 90;
+  const word = i.cad.t === 'f' ? 'fortnight' : i.cad.t === 'm' ? 'month' : 'quarter';
+
+  /* Walk back for the last time it was actually done — up to twice the window, so an
+     item that lapsed can report how far past due it is rather than just "due". */
+  let last = null;
+  for (let d = 0; d <= span * 2; d++) {
+    const e = S.getHEntry(shift(t, -d), i.id);
+    if (e && e.done) { last = d; break; }
+  }
+  /* Never done is not "0 days over" — there is no last date to count from. Say so. */
+  if (last === null) return { note: `never logged · every ${word}`, left: null, over: true };
+  const left = span - last;
+  return { note: `last ${last === 0 ? 'today' : last + 'd ago'} · every ${word}`, left, over: left < 0 };
+}
+
+/** Days-left, rendered the way a deadline reads out loud. */
+export function leftLabel(left, over) {
+  if (left == null) return over ? 'overdue' : '';
+  if (left < 0) return `${Math.abs(left)}d over`;
+  if (left === 0) return 'last day';
+  if (left === 1) return '1 day left';
+  return `${left} days left`;
 }
 
 const TIER_RANK = { foundation: 0, prayer: 1, reality: 2, due: 3, review: 4, housekeeping: 5 };
@@ -479,9 +529,17 @@ function order(tasks) {
     .sort((a, b) => a.at - b.at);
   const coming = open.filter(t => t.at && t.at.getTime() > now)
     .sort((a, b) => a.at - b.at);
-  const anytime = open.filter(t => !t.at)
-    .sort((a, b) => (TIER_RANK[a.tier] ?? 9) - (TIER_RANK[b.tier] ?? 9)
-      || (b.overdue || 0) - (a.overdue || 0));
+  /* Untimed work sorts by how long is actually left on it — an item three days over
+     its cadence outranks one with a week to run, whatever tier either sits in. Items
+     with no deadline at all fall to the back. */
+  /* left == null means one of two opposite things: overdue with no last date to count
+     from (most urgent), or simply no deadline (least). The `over` flag separates them. */
+  const rank = t => t.left != null ? t.left : (t.over ? -999 : 999);
+  const anytime = open.filter(t => !t.at).sort((a, b) => {
+    const al = rank(a), bl = rank(b);
+    if (al !== bl) return al - bl;
+    return (TIER_RANK[a.tier] ?? 9) - (TIER_RANK[b.tier] ?? 9) || (b.overdue || 0) - (a.overdue || 0);
+  });
 
   return {
     passed, coming, anytime, done,

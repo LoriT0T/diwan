@@ -21,6 +21,36 @@ one surface.
 | **Charisma Gym** | Charisma · social skill | <https://lorit0t.github.io/charisma-gym/> |
 | **Āfāq** | Screen · road · craft · travel | <https://lorit0t.github.io/afaq/> |
 
+## Every app runs inside this one
+
+**Apps → Open it here** mounts the real app in Dīwān: same code, same data, same URL
+underneath, framed by this page instead of a browser tab. A slim bar gives you back, the
+name, and ↗ for a full tab.
+
+It is an iframe, and that is the point rather than a shortcut. Every app already lives on
+this origin, so `../compound/` is *the app* — not a copy of it. Which means:
+
+- **Nothing breaks.** Existing links keep working, home-screen installs keep working, and
+  each app keeps its own repo, its own deploy and its own service worker.
+- **Nothing duplicates.** There is no second copy to drift from the first, which is the
+  exact failure this ecosystem is built to avoid. Moving the source in would also have
+  meant rebuilding Sakina, which is a Next.js app with its own `basePath`.
+- **The frame is not a black box.** Same origin, so anything logged in there is logged in
+  the same storage this page reads. Leaving an app re-reads before painting, so the queue
+  already reflects what you just did inside it.
+
+Deep links carry through: `#/in/jamal~%23%2Frituals` mounts Jamāl at its Rituals page, and
+every "open" in the queue points at the right page of the right app.
+
+### What this does *not* fix
+
+**It does nothing for using two devices.** All six apps were already on one origin, and
+storage is scoped to the origin, not the path — so a phone and a laptop were never going
+to see each other's data, and still will not. A private window gets its own throwaway
+partition for the same reason. That needs an account and a server to sync through, which
+is a different piece of work from this one. **Data → Download everything** remains the
+only way across today.
+
 ## Today is a queue
 
 One list, in the order the day actually happens. The top item is the one you are on; tick
@@ -28,7 +58,10 @@ it and the next comes up. That is the whole interaction.
 
 **Time decides the sequence, not importance.** A wake time belongs at 07:00 and dimming
 the lights belongs at 22:00, and nothing about priority moves either. Things with no time
-of their own fall to *Any time this week*, ordered by tier. Prayer times are computed here
+of their own fall to *Any time this week*, each carrying how long is actually left on it —
+a weekly target counts down to Sunday, a fortnightly or quarterly one counts from when it
+was last really done, and they sort by that rather than by tier. A weekly target that can
+no longer be reached says so instead of pretending to be overdue. Prayer times are computed here
 with `adhan` — the same library, version and settings Sakina uses, from the coordinates it
 already stores — so the two cannot disagree.
 
