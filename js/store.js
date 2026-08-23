@@ -20,7 +20,12 @@ const BLANK = {
   /* Things that belong to one day and to no app — "ring the dentist", "pack the
      charger". They live here rather than being pushed into a sibling, because none of
      the six owns them and inventing a home would distort whichever got them. */
-  todos: []          // { id, date, text, done, at? }
+  todos: [],         // { id, date, text, done, at? }
+  /* Meditation and affirmations leave no trace in Sakina — it records that a track was
+     *made*, never that it was played. So this is new information rather than a second
+     copy of something, which is the only reason it is allowed to live here. Journalling
+     is not in this list: it does leave a trace, and is read from Sakina directly. */
+  practice: {}       // 'YYYY-MM-DD' -> { meditation: ts, affirmations: ts }
 };
 
 function load() {
@@ -85,6 +90,28 @@ export function toggleTodo(id) {
   if (t) { t.done = !t.done; save(); }
   return t;
 }
+/* ---------- morning and evening practice ---------- */
+export const practiceOn = date => (S.practice || {})[date] || {};
+export function togglePractice(date, which) {
+  S.practice ||= {};
+  const day = (S.practice[date] ||= {});
+  if (day[which]) delete day[which]; else day[which] = Date.now();
+  if (!Object.keys(day).length) delete S.practice[date];
+  /* Two months is plenty to see a pattern and short enough not to become an archive. */
+  const cutoff = new Date(Date.now() - 62 * 864e5).toISOString().slice(0, 10);
+  for (const d of Object.keys(S.practice)) if (d < cutoff) delete S.practice[d];
+  save();
+  return !!(S.practice[date] || {})[which];
+}
+
+/* Re-seed from what is on disk. Sync writes `diwan.v1` directly, and this module holds
+   `S` in memory from import — without this the next save would put the pre-merge copy
+   straight back over the merged one. The same hazard, and the same fix, as Anbīq and
+   Āfāq; the hub is not exempt from its own rule. */
+export function replace(next) {
+  S = Object.assign(structuredClone(BLANK), next || {});
+}
+
 export function dropTodo(id) {
   S.todos = (S.todos || []).filter(x => x.id !== id);
   save();

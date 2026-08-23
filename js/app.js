@@ -444,9 +444,25 @@ function wireCommandBar() {
     /* Done tasks go in too, so "I showered" about something already ticked
        hears "already logged" rather than a shrug. */
     const pool = Q.all.concat(Q.done, Q.dormant || []).filter(t => t.action);
-    const { hits, already, notDue, misses, ambiguous } = V.match(text, pool, BUNDLES);
+    let { hits, already, notDue, misses, ambiguous } = V.match(text, pool, BUNDLES);
 
-    if (!hits.length && !ambiguous.length && !already.length && !notDue.length) {
+    /* Some rows are real tasks that this bar cannot tick, because the doing and the
+       recording are the same act somewhere else — a journal entry is the writing of it.
+       Matching those separately turns "I journalled" from a shrug into a sentence that
+       says where it actually gets recorded. */
+    const elsewhere = [];
+    if (misses.length) {
+      const off = Q.all.concat(Q.done).filter(t => !t.action && t.recordedBy);
+      const still = [];
+      for (const m of misses) {
+        const r = V.match(m, off, []);
+        if (r.hits.length) elsewhere.push(...r.hits.map(h => h.task));
+        else still.push(m);
+      }
+      misses = still;
+    }
+
+    if (!hits.length && !ambiguous.length && !already.length && !notDue.length && !elsewhere.length) {
       hint.innerHTML = `<b>Nothing matched.</b> “${esc(text)}” did not line up with anything tickable on the list. Tap it instead, or use the words as they appear above.`;
       return;
     }
@@ -466,6 +482,7 @@ function wireCommandBar() {
     if (already.length) bits.push(`<b>Already logged:</b> ${already.map(a => esc(a.task.label)).join(', ')}.`);
     if (notDue.length) bits.push(`<b>Not due today:</b> ${notDue.map(n => esc(n.task.label)).join(', ')}. Left alone rather than ticked early.`);
     for (const a of ambiguous) bits.push(`<b>“${esc(a.fragment)}”</b> could be ${a.tasks.map(t => esc(t.label)).join(' or ')} — tap the one you meant.`);
+    for (const t of elsewhere) bits.push(`<b>${esc(t.label)}</b> is recorded by ${esc(t.recordedBy)} — do it there and it ticks itself here.`);
     if (misses.length) bits.push(`<b>Not placed:</b> ${misses.map(m => '“' + esc(m) + '”').join(', ')}. Nothing was ticked for those.`);
     $('#cmd-hint').innerHTML = bits.join('<br>');
 

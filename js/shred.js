@@ -310,7 +310,43 @@ const sakina = {
 };
 
 /* ══════════════════════════════════════════════════════════════════ */
-export const SHREDDERS = { compound, jamal, anbiq, gc, afaq, sakina };
+
+/* ══════════════════════════════════════════════════════════════════
+   DĪWĀN ITSELF — the little it owns
+   ══════════════════════════════════════════════════════════════════
+   The hub deliberately holds almost nothing, but "almost" is not "nothing", and what
+   it does hold is exactly the kind of thing that must follow you between devices: the
+   one-off jobs written down for today, and whether the morning's meditation happened.
+   Leaving this shard out was a silent hole — every other app synced and the hub's own
+   page quietly did not.
+
+   The pasted Good Company snapshot travels as a single record. It is large and it
+   changes only on an import, so splitting it would buy nothing. */
+const diwanKey = 'diwan.v1';
+const diwan = {
+  shred() {
+    const s = raw(diwanKey); if (!s) return {};
+    const o = {};
+    list(s.todos, 'todo', o);
+    two(s.practice, 'prac', o);
+    if (s.gc) o.gc = s.gc;
+    if (s.lastBackup) o.lastBackup = s.lastBackup;
+    return o;
+  },
+  async apply(r) {
+    if (empty(r)) return;
+    const s = raw(diwanKey) || { v: 1 };
+    s.todos = unList(r, 'todo');
+    s.practice = unTwo(r, 'prac');
+    s.gc = 'gc' in r ? r.gc : null;
+    s.lastBackup = 'lastBackup' in r ? r.lastBackup : null;
+    s.v = 1;
+    put(diwanKey, s);
+    await rehydrate('./store.js', diwanKey);
+  }
+};
+
+export const SHREDDERS = { compound, jamal, anbiq, gc, afaq, sakina, diwan };
 export const APP_IDS = Object.keys(SHREDDERS);
 
 /** Every app's records, as { app: { key: value } }. */

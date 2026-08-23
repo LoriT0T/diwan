@@ -437,6 +437,59 @@ export async function buildQueue(snap) {
         });
       }
     }
+    /* ── the day's practice, in the order it belongs in ──
+       Meditation after waking, journalling before affirmations, affirmations before
+       sleep. That ordering is the point rather than decoration: a meditation is for
+       arriving in the day and an affirmation track is for going down, and the journal
+       goes first in the evening because writing the day down is what lets you stop
+       turning it over — held in the head it circles, written down it waits.
+
+       Hours hang off what is already known. Meditation follows the wake time actually
+       logged, and affirmations sit just after Compound's dim-the-lights lever, so the
+       whole evening reads as one sequence rather than three apps each having an opinion
+       about bedtime. */
+    /* Deliberately not gated on sak.ok. Meditating and listening to affirmations are
+       things to do today whether or not Sakina has ever been opened — and Dīwān keeps
+       their record itself, so nothing here depends on that app being reachable. A task
+       is what is due, not what has already been logged; gating on the app's state is
+       the exact mistake that once left this page showing only the rows it had history
+       for. Only the two links below point at Sakina, and a link can wait. */
+    {
+      const prac = D.practiceOn(date);
+      const wokeAt = compoundWake(date);
+      const medAt = at(wokeAt != null ? Math.min(wokeAt + 0.34, 11) : 7.34);
+
+      out.push({
+        key: 'sakina:meditation', app: 'sakina', label: 'Meditation', note: 'Practice',
+        domain: 'meditation', brief: 'Arriving in the day. Silence is the practice, not the gap between words.',
+        at: medAt, done: !!prac.meditation, tier: 'due',
+        words: ['meditate', 'meditation', 'breathwork'],
+        action: { kind: 'diwan.practice', date, which: 'meditation' },
+        href: sak.url + 'make/meditation/', cta: 'Make one'
+      });
+
+      out.push({
+        key: 'sakina:journal', app: 'sakina', label: 'Journal', note: 'Practice',
+        domain: 'journal',
+        brief: 'Before the affirmations. A line is enough — held in the head it circles.',
+        at: at(21), done: !!sak.journalToday, tier: 'due',
+        words: ['journal', 'wrote', 'writing'],
+        /* Not tickable: writing something is the whole action, and Sakina records it,
+           so doneness comes from there rather than from a claim made here. `recordedBy`
+           lets the command bar say that instead of shrugging at "I journalled". */
+        action: null, recordedBy: 'Sakina', href: sak.url + 'journal/', cta: 'Write it'
+      });
+
+      out.push({
+        key: 'sakina:affirmations', app: 'sakina', label: 'Affirmations', note: 'Practice',
+        domain: 'affirmations', brief: 'On the way down, not something to concentrate on.',
+        at: at(22.25), done: !!prac.affirmations, tier: 'due',
+        words: ['affirmations', 'affirmation', 'listened'],
+        action: { kind: 'diwan.practice', date, which: 'affirmations' },
+        href: sak.url + 'library/', cta: 'Open the library'
+      });
+    }
+
     if (sak.ok && sak.started) {
       const staleMood = !sak.stat.some(s => s.l === 'Last mood' && s.v === 'today');
       if (staleMood) out.push({
@@ -635,6 +688,18 @@ export async function buildQueue(snap) {
   }
 
   return order(out);
+}
+
+/* The wake time actually logged today, as a fractional hour, or null. Read straight
+   from Compound's store so the morning hangs off one fact rather than three guesses. */
+function compoundWake(date) {
+  try {
+    const raw = JSON.parse(localStorage.getItem('pp:v1:hlog') || '{}');
+    const t = raw?.[date]?.wake?.v?.t;
+    if (!t || !/^\d{1,2}:\d{2}$/.test(t)) return null;
+    const [h, m] = t.split(':').map(Number);
+    return h + m / 60;
+  } catch { return null; }
 }
 
 /* Jamāl's own dueIn, copied rather than imported — see write.js for why. */

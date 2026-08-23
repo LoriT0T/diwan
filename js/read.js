@@ -242,6 +242,13 @@ async function readJamal(covered) {
   }
   R.last = Object.keys(R.days).sort().pop() || null;
 
+  /* Whether anything was written today, read from Sakina's own entries — the one part
+     of the evening practice that leaves a trace there, so it needs no record of ours.
+     Set before the early return below: "have I journalled today" has the same honest
+     answer whether or not Sakina has ever been opened, and the row that asks it is
+     due either way. */
+  R.journalToday = journal.some(j => iso(new Date(j.at)) === t);
+
   if (!R.started) { R.stat = [{ l: 'Not started', v: '—' }]; return R; }
 
   const dueRituals = J.RITUALS.filter(r => { const n = jamalDueIn(r, st, t); return n !== null && n <= 0; });
@@ -439,7 +446,11 @@ async function readSakina() {
   ];
 
   const open = await openSakina();
-  if (!open.ok) { R.ok = false; R.reason = open.reason; return R; }
+  /* An unreachable database is not evidence that nothing was written — it is the
+     absence of evidence. `false` is still the right answer for the row, because an
+     entry that cannot be seen cannot tick anything, but the field is set explicitly
+     so a caller never has to tell "no" apart from "did not look". */
+  if (!open.ok) { R.ok = false; R.reason = open.reason; R.journalToday = false; return R; }
   const db = open.db;
 
   const [prayers, moods, journal, tracks] = await Promise.all(
@@ -469,6 +480,13 @@ async function readSakina() {
     R.feed.push({ t: tr.createdAt, d, app: 'sakina', text: 'Made "' + (tr.name || 'a track') + '"' });
   }
   R.last = Object.keys(R.days).sort().pop() || null;
+
+  /* Whether anything was written today, read from Sakina's own entries — the one part
+     of the evening practice that leaves a trace there, so it needs no record of ours.
+     Set before the early return below: "have I journalled today" has the same honest
+     answer whether or not Sakina has ever been opened, and the row that asks it is
+     due either way. */
+  R.journalToday = journal.some(j => iso(new Date(j.at)) === t);
 
   if (!R.started) { R.stat = [{ l: 'Not started', v: '—' }]; return R; }
 

@@ -282,6 +282,13 @@ async function diwanTodo({ id }) {
   return { ok: true, done: t.done, undo: () => D.toggleTodo(id) };
 }
 
+/* ── the listening practice ── */
+async function diwanPractice({ date, which }) {
+  const D = await import('./store.js');
+  const now = D.togglePractice(date, which);
+  return { ok: true, done: now, undo: () => D.togglePractice(date, which) };
+}
+
 /* ── dispatch table ───────────────────────────────────────────────── */
 const HANDLERS = {
   'compound.h':    compoundToggle,
@@ -292,7 +299,8 @@ const HANDLERS = {
   'sakina.prayer': sakinaPrayer,
   'gc.rep':        gcRep,
   'afaq.item':     afaqItem,
-  'diwan.todo':    diwanTodo
+  'diwan.todo':    diwanTodo,
+  'diwan.practice': diwanPractice
 };
 
 /**
