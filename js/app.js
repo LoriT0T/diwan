@@ -16,6 +16,7 @@ import * as SS from './session.js';
 import * as P from './push.js';
 import { buildQueue, BUNDLES, PRAYER_LABEL, place, prayerTimes, leftLabel } from './tasks.js';
 import { TIER_LABEL } from './rank.js';
+import * as NB from './native.js';
 
 const $ = (s, r = document) => r.querySelector(s);
 const app = $('#app');
@@ -162,6 +163,8 @@ const grouping = () => { try { return localStorage.getItem(GKEY) === 'app' ? 'ap
 const setGrouping = g => { try { localStorage.setItem(GKEY, g); } catch {} };
 
 function renderQueue() {
+  /* Inside the iOS app, every rebuild also refreshes the lock screen. */
+  NB.publish(Q);
   const box = $('#queue'); if (!box) return;
   const sub = $('#q-sub');
   const open = Q.all.filter(t => !t.done);
@@ -1625,8 +1628,13 @@ async function refresh() {
   /* The day's shape on the app icon, glanceable with nothing open. */
   N.badge(Q.all.filter(t => !t.done && !t.isNote).length);
   paint();
+  NB.publish(Q);
   syncAgenda();
 }
+
+/* The watch's morning arrives once the native shell has read it; a write to
+   Compound's store means the queue it feeds must be rebuilt. */
+NB.install(() => refresh());
 
 /* The service worker asks an open window to route rather than opening a second copy. */
 navigator.serviceWorker?.addEventListener('message', e => {
