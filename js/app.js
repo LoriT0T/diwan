@@ -24,9 +24,10 @@ const esc = s => String(s ?? '').replace(/[&<>"']/g, c =>
 
 const HUE = id => `var(--${id})`;
 const APP_IDS = ['compound', 'jamal', 'anbiq', 'sakina', 'gc', 'afaq'];
+const APP_ORDER = ['diwan', ...APP_IDS];
 const APP_NAME = {
   compound: 'Compound', jamal: 'Jamāl', anbiq: 'Anbīq',
-  sakina: 'Sakina', gc: 'Charisma Gym', afaq: 'Āfāq'
+  sakina: 'Sakina', gc: 'Charisma Gym', afaq: 'Āfāq', diwan: 'Today'
 };
 
 /* Each app's folder relative to Dīwān's own. Relative rather than absolute so the
@@ -115,6 +116,7 @@ function viewToday() {
       <p class="sub" id="q-sub"></p>
     </header>
     <div id="queue"></div>
+    ${todoBar()}
     ${commandBar()}
     <div class="sect">
       <div class="note"><b>Ticking here writes into the app that owns it.</b> If that app is
@@ -122,6 +124,7 @@ function viewToday() {
     </div>`;
 
   renderQueue();
+  wireTodo();
   wireCommandBar();
 }
 
@@ -155,9 +158,9 @@ function renderQueue() {
 
   box.innerHTML =
     headCard(head) +
-    group('Also due now', passed) +
-    group('Later today', coming) +
-    group('Any time this week', anytime) +
+    group('Also due now', passed, { split: true }) +
+    group('Later today', coming, { split: true }) +
+    group('Any time this week', anytime, { split: true }) +
     group('Needs the app', notes) +
     doneBlock(done);
 
@@ -187,12 +190,35 @@ function headCard(t) {
   </div>`;
 }
 
-function group(title, list) {
+/**
+ * A group of rows. When there are enough to be a wall, they are broken out under the
+ * app each belongs to — a colour stripe tells you which app a row came from only if you
+ * have memorised six colours, and a heading does not ask you to.
+ */
+function group(title, list, { split = false } = {}) {
   if (!list.length) return '';
-  return `<div class="sect">
-    <div class="sect-h"><h3>${esc(title)}</h3><span class="aside">${list.length}</span></div>
-    <div class="rows">${list.map(row).join('')}</div>
-  </div>`;
+  const head = `<div class="sect-h"><h3>${esc(title)}</h3><span class="aside">${list.length}</span></div>`;
+
+  if (!split || list.length < 6) {
+    return `<div class="sect">${head}<div class="rows">${list.map(row).join('')}</div></div>`;
+  }
+
+  const byApp = {};
+  for (const t of list) (byApp[t.app] ||= []).push(t);
+  const blocks = APP_ORDER.filter(id => byApp[id]).map(id => {
+    const rows = byApp[id];
+    /* Within an app, its own domains stay together — supplements under fuel, rituals
+       under ritual — so a section reads as that app's page rather than a shuffle. */
+    const byDom = {};
+    for (const t of rows) (byDom[t.note || '—'] ||= []).push(t);
+    const inner = Object.entries(byDom).map(([dom, ts]) =>
+      `${Object.keys(byDom).length > 1 ? `<div class="sub-h">${esc(dom)}</div>` : ''}
+       <div class="rows">${ts.map(row).join('')}</div>`).join('');
+    return `<div class="appgrp" style="--hue:${HUE(id)}">
+      <div class="appgrp-h"><i></i><span>${esc(APP_NAME[id] || id)}</span>
+        <b>${rows.length}</b></div>${inner}</div>`;
+  }).join('');
+  return `<div class="sect">${head}${blocks}</div>`;
 }
 
 function row(t) {
@@ -270,6 +296,32 @@ function wireRows() {
       renderQueue(); toast('Unticked.');
     };
   });
+}
+
+/* ── the day's own list ──────────────────────────────────────────────
+   Everything else on this page was raised by an app. This is the one place to put
+   something that belongs to today and to nothing else. */
+function todoBar() {
+  return `<div class="sect">
+    <div class="sect-h"><h3>Just for today</h3><span class="aside">yours, not an app's</span></div>
+    <div class="cmd-in">
+      <input id="td-t" type="text" autocomplete="off" placeholder="Something only today needs…">
+      <input id="td-at" type="time" class="td-time" aria-label="At (optional)">
+      <button id="td-go" class="cmd-go">Add</button>
+    </div>
+  </div>`;
+}
+function wireTodo() {
+  const inp = $('#td-t'); if (!inp) return;
+  const add = async () => {
+    const text = inp.value.trim(); if (!text) return;
+    D.addTodo(text, R.iso(), $('#td-at').value || null);
+    inp.value = ''; $('#td-at').value = '';
+    await refresh();
+    toast('Added to today.');
+  };
+  $('#td-go').onclick = add;
+  inp.onkeydown = e => { if (e.key === 'Enter') add(); };
 }
 
 /* ── the command bar ──────────────────────────────────────────────── */

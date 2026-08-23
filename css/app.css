@@ -601,3 +601,25 @@ body.framed #sessbar{bottom:0;border-bottom:0;padding-bottom:var(--safe-b)}
 .sp-vol{font-size:12.5px;color:var(--tx-3);font-variant-numeric:tabular-nums}
 
 @media(max-width:400px){.sp-set{grid-template-columns:28px 1fr 54px 50px 42px;gap:5px}}
+
+/* ── grouped by the app a row belongs to ────────────────
+   Six accent colours only tell you which app a row is from if you have learnt six
+   accent colours. A heading does not ask that of you. */
+.appgrp{margin-bottom:12px}
+.appgrp-h{
+  display:flex;align-items:center;gap:8px;padding:0 2px 6px;
+  font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--hue);font-weight:600;
+}
+.appgrp-h i{width:7px;height:7px;border-radius:2px;background:var(--hue);flex:none}
+.appgrp-h span{flex:1}
+.appgrp-h b{color:var(--tx-3);font-weight:600;font-size:10.5px}
+.sub-h{
+  font-size:10px;letter-spacing:.09em;text-transform:uppercase;color:var(--tx-3);
+  padding:9px 2px 5px;font-weight:600;
+}
+.appgrp .rows{margin-bottom:6px}
+.td-time{
+  background:transparent;border:0;color:var(--tx-2);font-family:var(--sans);
+  font-size:13px;padding:8px 4px;flex:none;width:82px;
+}
+.td-time::-webkit-calendar-picker-indicator{filter:invert(.6)}

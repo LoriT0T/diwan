@@ -16,7 +16,11 @@ const KEY = 'diwan.v1';
 const BLANK = {
   v: 1,
   gc: null,          // { data, importedAt }  — pasted Good Company export
-  lastBackup: null   // ISO date of the last unified export
+  lastBackup: null,  // ISO date of the last unified export
+  /* Things that belong to one day and to no app — "ring the dentist", "pack the
+     charger". They live here rather than being pushed into a sibling, because none of
+     the six owns them and inventing a home would distort whichever got them. */
+  todos: []          // { id, date, text, done, at? }
 };
 
 function load() {
@@ -61,3 +65,27 @@ export function importGC(text) {
 export function forgetGC() { S.gc = null; save(); }
 
 export function markBackup(dateISO) { S.lastBackup = dateISO; save(); }
+
+/* ---------- the day's own list ---------- */
+export const todos = (date) => (S.todos || []).filter(t => !date || t.date === date);
+
+export function addTodo(text, date, at) {
+  const t = { id: Math.random().toString(36).slice(2, 9), date, text: String(text).trim(), done: false };
+  if (at) t.at = at;
+  (S.todos ||= []).push(t);
+  /* Keep a month. A to-do list that never forgets becomes a graveyard, which is the
+     failure this whole ecosystem is built against. */
+  const cutoff = new Date(Date.now() - 31 * 864e5).toISOString().slice(0, 10);
+  S.todos = S.todos.filter(x => x.date >= cutoff);
+  save();
+  return t;
+}
+export function toggleTodo(id) {
+  const t = (S.todos || []).find(x => x.id === id);
+  if (t) { t.done = !t.done; save(); }
+  return t;
+}
+export function dropTodo(id) {
+  S.todos = (S.todos || []).filter(x => x.id !== id);
+  save();
+}

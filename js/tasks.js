@@ -32,6 +32,7 @@
 
 import * as A from '../vendor/adhan.esm.min.js';
 import { iso, shift, since } from './read.js';
+import * as D from './store.js';
 
 /* ── the clock ─────────────────────────────────────────────────────
    Nominal hours for the things that have a time of day but no exact one.
@@ -142,6 +143,82 @@ export const BUNDLES = [
   { words: ['my supplements', 'supplements', 'my pills', 'all my vitamins'], match: t => t.app === 'compound' && t.domain === 'fuel' }
 ];
 
+const hash = str => { let h = 2166136261; for (const c of String(str)) { h ^= c.charCodeAt(0); h = Math.imul(h, 16777619); } return h >>> 0; };
+
+/* ══════════════════════════════════════════════════════════════════
+   SCHEDULING A CADENCE
+
+   "Three times a week" is not a time, and an item that only ever says "0/3 this week"
+   never prompts anything — it just sits there accusing you. So a cadence is turned into
+   actual dated slots: three sessions a week become three specific days, each with an
+   hour, each tickable, each counting down.
+
+   The days are spread evenly and offset by a hash of the item id, so a 2×/week item and
+   a 1×/week item do not both land on Monday and make one impossible day.
+
+   Being behind is treated differently from being ahead. If fewer have been done than
+   slots have passed, the item is due NOW — the week is running out and that is the fact
+   worth surfacing. Otherwise it points at its next slot.
+   ══════════════════════════════════════════════════════════════════ */
+const DOMAIN_HOUR = { move: 17, fuel: 18, test: 11, sleep: 9, workout: 17 };
+
+function weekSlots(id, n, mondayKey) {
+  const off = hash(id) % 7;
+  const days = [];
+  for (let i = 0; i < n; i++) days.push(Math.round((i * 7) / n));
+  /* Rotate by the hash so different items sit on different days, then sort so the
+     week reads forwards. */
+  return days.map(d => (d + off) % 7).sort((a, b) => a - b).map(d => shift(mondayKey, d));
+}
+
+/**
+ * Where a periodic item stands today.
+ * Returns { at, left, over, note } — `at` is a real Date when it wants doing today or
+ * next, and null when its window is not open.
+ */
+function schedulePeriodic(i, S, date, hour) {
+  const dow = (new Date(date + 'T00:00').getDay() + 6) % 7;      // Monday = 0
+  const monday = shift(date, -dow);
+
+  if (i.cad.t === 'w') {
+    const slots = weekSlots(i.id, i.cad.n, monday);
+    const done = S.weekCount(date, i.id);
+    const elapsed = slots.filter(d => d <= date).length;
+    const remaining = slots.filter(d => d > date).length;
+    if (done >= i.cad.n) return { at: null, left: null, note: `${done}/${i.cad.n} this week — done` };
+    if (done < elapsed) {
+      /* Behind: it wanted doing on a day that has gone. Surface it now. */
+      return { at: at(hour, new Date(date + 'T00:00')), left: remaining,
+               over: remaining === 0,
+               note: `${done}/${i.cad.n} this week · behind by ${elapsed - done}` };
+    }
+    const next = slots.find(d => d > date) || null;
+    return {
+      at: next === date ? at(hour, new Date(date + 'T00:00')) : null,
+      nextDay: next, left: next ? between(date, next) : null,
+      note: `${done}/${i.cad.n} this week` + (next ? ` · next ${new Date(next + 'T00:00').toLocaleDateString('en-GB', { weekday: 'short' })}` : '')
+    };
+  }
+
+  /* Fortnightly, monthly, quarterly — a real date derived from the last one done. */
+  const span = i.cad.t === 'f' ? 14 : i.cad.t === 'm' ? 30 : 90;
+  const word = i.cad.t === 'f' ? 'fortnight' : i.cad.t === 'm' ? 'month' : 'quarter';
+  let last = null;
+  for (let d = 0; d <= span * 2; d++) {
+    const e = S.getHEntry(shift(date, -d), i.id);
+    if (e && e.done) { last = d; break; }
+  }
+  if (last === null) return { at: at(hour, new Date(date + 'T00:00')), left: null, over: true,
+                              note: `never logged · every ${word}` };
+  const left = span - last;
+  const dueDay = shift(date, left);
+  return {
+    at: left <= 0 ? at(hour, new Date(date + 'T00:00')) : null,
+    nextDay: left > 0 ? dueDay : null, left, over: left < 0,
+    note: `last ${last === 0 ? 'today' : last + 'd ago'} · every ${word}`
+  };
+}
+
 /* ══════════════════════════════════════════════════════════════════
    Build
    ══════════════════════════════════════════════════════════════════ */
@@ -178,15 +255,20 @@ export async function buildQueue(snap) {
         if (i.id === 'light' && wokeAt != null) when = at(Math.min(wokeAt + 1, 11));
         else if (i.dom === 'sleep') when = at(HOUR[i.id] ?? 9);
         else if (i.dom === 'fuel' && daily) when = at(HOUR['fuel' + (i.when || 2)] ?? HOUR.fuel2);
+        /* A cadence becomes real dated slots rather than a running tally. */
+        let sched = null;
+        if (!daily) {
+          sched = schedulePeriodic(i, S, date, DOMAIN_HOUR[i.dom] ?? 12);
+          if (sched.at) when = sched.at;
+        }
+
         out.push({
           key: 'compound:' + i.id, app: 'compound', label: i.name,
           note: (H.DOMAINS[i.dom] || {}).label || i.dom, domain: i.dom,
           brief: i.brief || '', at: when, slot: when ? null : 'any',
           done, tier: i.id === 'wake' ? 'foundation' : i.dom === 'test' ? 'reality' : 'due',
-          ...(daily ? { cadence: null } : (() => {
-            const c = cadenceNote(i, S);
-            return { cadence: c.note, left: c.left, over: c.over, short: c.short, tight: c.tight };
-          })()),
+          ...(sched ? { cadence: sched.note, left: sched.left, over: sched.over,
+                        nextDay: sched.nextDay } : { cadence: null }),
           /* A curfew warned about after it has passed is a reprimand, not a reminder,
              so the notification lands a quarter of an hour before the cutoff while the
              row itself stays at the cutoff, where it belongs in the day. */
@@ -508,6 +590,20 @@ export async function buildQueue(snap) {
         });
       }
     } catch { /* reported by the reader */ }
+  }
+
+  /* ── The day's own list ──
+     Typed by hand, belonging to no app. Ranked with everything else so a dentist
+     appointment does not sit in a different universe from a prayer. */
+  for (const t of D.todos(date)) {
+    out.push({
+      key: 'diwan:todo:' + t.id, app: 'diwan', label: t.text, note: 'Today',
+      domain: 'todo', brief: '', done: t.done,
+      at: t.at ? at(Number(t.at.split(':')[0]) + Number(t.at.split(':')[1] || 0) / 60) : null,
+      slot: t.at ? null : 'any', tier: 'due', daily: !t.at,
+      words: t.text.toLowerCase().split(/\s+/).filter(x => x.length > 3),
+      action: { kind: 'diwan.todo', id: t.id }, href: '#/'
+    });
   }
 
   /* ── What is left that a tick cannot close ──

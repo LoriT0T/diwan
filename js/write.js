@@ -273,6 +273,15 @@ async function afaqItem({ tripId, date, itemId }) {
   };
 }
 
+/* ── Dīwān's own list ── */
+async function diwanTodo({ id }) {
+  const D = await import('./store.js');
+  const before = (D.todos().find(t => t.id === id) || {}).done;
+  const t = D.toggleTodo(id);
+  if (!t) return { ok: false, error: 'That one is no longer on the list.' };
+  return { ok: true, done: t.done, undo: () => D.toggleTodo(id) };
+}
+
 /* ── dispatch table ───────────────────────────────────────────────── */
 const HANDLERS = {
   'compound.h':    compoundToggle,
@@ -282,7 +291,8 @@ const HANDLERS = {
   'anbiq.seen':    anbiqDispatchSeen,
   'sakina.prayer': sakinaPrayer,
   'gc.rep':        gcRep,
-  'afaq.item':     afaqItem
+  'afaq.item':     afaqItem,
+  'diwan.todo':    diwanTodo
 };
 
 /**
