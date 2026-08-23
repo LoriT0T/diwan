@@ -687,15 +687,19 @@ document.addEventListener('click', e => { if (e.target && e.target.id === 'scrim
    Copying the source in would have bought none of that and cost all of it —
    Sakina alone is a Next.js build with its own basePath.
    ══════════════════════════════════════════════════════════════════ */
-/* A framed page gets NO device permissions unless the frame grants them, and the
-   failure is silent from the inside: Charisma Gym's call would ask for the mic,
-   be refused by policy, and report a microphone problem — the merge quietly
-   breaking the one feature in the ecosystem that needs a device. Granted per app
-   rather than across the board, because five of the six have no use for it.
+/* Insurance, stated honestly: `microphone` and `autoplay` default to an allowlist
+   of `self`, so a SAME-ORIGIN frame inherits them without this — measured in
+   Chrome, where an unmarked frame of Compound reports allowsFeature('microphone')
+   true. Cross-origin frames are the ones that must be granted explicitly, and
+   nothing here is cross-origin.
 
-   Nothing is escalated by this. Every frame here is the same origin as this page,
-   so anything granted is something the app already has when opened in its own
-   tab; the list only decides which of them keep it when they are mounted. */
+   It stays because the default is a browser's to change and Safari has been the
+   stricter of the two about exactly this, iOS Safari being the device the call
+   is most likely to be made from. Declaring the two apps that need a device makes
+   the frame independent of that default, and says out loud which apps they are.
+
+   Nothing is escalated by it: every frame is the same origin as this page, so
+   anything granted is something the app already has in its own tab. */
 const FRAME_ALLOW = {
   gc:     'microphone; autoplay',   // the live call — mic in, voice out
   sakina: 'autoplay'                // plays the meditation and affirmation tracks
