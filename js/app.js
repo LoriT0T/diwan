@@ -687,10 +687,25 @@ document.addEventListener('click', e => { if (e.target && e.target.id === 'scrim
    Copying the source in would have bought none of that and cost all of it —
    Sakina alone is a Next.js build with its own basePath.
    ══════════════════════════════════════════════════════════════════ */
+/* A framed page gets NO device permissions unless the frame grants them, and the
+   failure is silent from the inside: Charisma Gym's call would ask for the mic,
+   be refused by policy, and report a microphone problem — the merge quietly
+   breaking the one feature in the ecosystem that needs a device. Granted per app
+   rather than across the board, because five of the six have no use for it.
+
+   Nothing is escalated by this. Every frame here is the same origin as this page,
+   so anything granted is something the app already has when opened in its own
+   tab; the list only decides which of them keep it when they are mounted. */
+const FRAME_ALLOW = {
+  gc:     'microphone; autoplay',   // the live call — mic in, voice out
+  sakina: 'autoplay'                // plays the meditation and affirmation tracks
+};
+
 function viewFrame(id, tail) {
   const a = SNAP.apps.find(x => x.id === id);
   if (!a) { location.hash = '#/apps'; return; }
   const src = relPath(a) + (tail ? decodeURIComponent(tail) : '');
+  const allow = FRAME_ALLOW[id] || '';
 
   document.body.classList.add('framed');
   const mb = $('#menu'); if (mb) mb.hidden = true;
@@ -704,7 +719,8 @@ function viewFrame(id, tail) {
         <a class="fb-out" href="${esc(src)}" target="_blank" rel="noopener"
            aria-label="Open in its own tab">↗</a>
       </div>
-      <iframe class="frame" src="${esc(src)}" title="${esc(a.name)}"></iframe>
+      <iframe class="frame" src="${esc(src)}" title="${esc(a.name)}"
+        ${allow ? `allow="${esc(allow)}"` : ''}></iframe>
     </div>`;
   $('#fb-menu').onclick = openDrawer;
 }
