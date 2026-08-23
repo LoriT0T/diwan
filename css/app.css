@@ -679,3 +679,59 @@ body.framed #sessbar{bottom:0;border-bottom:0;padding-bottom:var(--safe-b)}
   padding:2px 7px;line-height:1.2;white-space:nowrap}
 .t-ends.warm{color:var(--warn);border-color:var(--warn)}
 .t-ends.hot{color:var(--bad, #c26a55);border-color:var(--bad, #c26a55);font-weight:700}
+
+/* ── the week, readable ────────────────────────────────
+   Seven real columns instead of 3mm heat cells. A chip is an app that wrote
+   something that day, carrying its count — legible at arm's length, which the
+   quarter wall never was. */
+.wk-nav{display:flex;align-items:center;gap:10px;margin-bottom:12px}
+.wk-btn{width:30px;height:30px;border-radius:8px;border:1px solid var(--line-2);
+  background:transparent;color:var(--tx-2);font-size:16px;cursor:pointer;line-height:1}
+.wk-btn:disabled{opacity:.3;cursor:default}
+.wk-lab{font-size:13px;font-weight:600;color:var(--tx);min-width:110px;text-align:center}
+.wgrid{display:grid;grid-template-columns:repeat(7,1fr);gap:6px}
+.wday{border:1px solid var(--line);border-radius:10px;padding:7px 6px;min-height:86px;
+  display:flex;flex-direction:column;gap:6px;background:var(--bg-1, transparent)}
+.wday.today{border-color:var(--tx-3)}
+.wday.future{opacity:.4}
+.wd-h{display:flex;align-items:baseline;justify-content:space-between}
+.wd-dow{font-size:10px;letter-spacing:1px;text-transform:uppercase;color:var(--tx-3)}
+.wd-n{font-size:12.5px;font-weight:700;color:var(--tx-2);font-variant-numeric:tabular-nums}
+.wd-marks{display:flex;flex-direction:column;gap:3px}
+.wd-chip{display:flex;justify-content:space-between;align-items:center;gap:4px;
+  font-size:10px;line-height:1.5;padding:2px 6px;border-radius:6px;
+  color:var(--hue);background:color-mix(in srgb, var(--hue) 14%, transparent);
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.wd-chip b{font-variant-numeric:tabular-nums;font-weight:700}
+.wd-none{color:var(--tx-3);font-size:11px}
+@media (max-width:640px){
+  .wgrid{grid-template-columns:repeat(7,1fr);gap:3px}
+  .wday{padding:5px 3px;min-height:70px}
+  .wd-chip{font-size:8.5px;padding:1.5px 4px}
+  .wd-chip b{display:none}   /* the count is detail; presence is the signal */
+}
+
+/* fold-outs (the quarter overview lives in one) */
+details.acc-d{border:1px solid var(--line);border-radius:12px;background:var(--card)}
+details.acc-d>summary{cursor:pointer;list-style:none;padding:12px 15px;font-size:13px;
+  font-weight:600;color:var(--tx-2);display:flex;justify-content:space-between}
+details.acc-d>summary::after{content:'+';color:var(--tx-3)}
+details.acc-d[open]>summary::after{content:'–'}
+details.acc-d>.in{padding:4px 15px 15px}
+
+/* ── the weekly pulse ─────────────────────────────────
+   Two bars per app: last week ghosted behind, this week solid in front. The
+   comparison is the content; a single bar would just be a number drawn long. */
+.pl{display:flex;flex-direction:column;gap:8px}
+.pl-row{display:grid;grid-template-columns:92px 1fr 52px 34px;gap:10px;align-items:center}
+.pl-n{font-size:12px;color:var(--tx-2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.pl-bars{position:relative;height:14px}
+.pl-bars i{position:absolute;left:0;border-radius:4px;display:block}
+.pl-bars .prev{top:8px;height:4px;background:var(--line-2)}
+.pl-bars .cur{top:0;height:7px;background:var(--hue)}
+.pl-v{font-size:12px;color:var(--tx);text-align:right;font-variant-numeric:tabular-nums}
+.pl-v small{color:var(--tx-3)}
+.pl-d{font-size:11px;text-align:right;color:var(--tx-3);font-variant-numeric:tabular-nums}
+.pl-d.up{color:var(--ok)} .pl-d.dn{color:var(--warn)}
+.pl-verdict{margin-top:12px;border-top:1px solid var(--line);padding-top:10px}
+.pl-verdict p{font-size:12.5px;line-height:1.55;color:var(--tx-2);margin-top:4px}

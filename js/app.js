@@ -789,27 +789,63 @@ let wasFramed = false;
 /* ══════════════════════════════════════════════════════════════════
    LOG
    ══════════════════════════════════════════════════════════════════ */
+let LOG_WK = 0;   // 0 = this week, 1 = last week, …
+
 function viewLog() {
   const { apps, today } = SNAP;
-  const WEEKS = 13;
 
+  /* ── one week at a time ──
+     The old view was a quarter of 3mm cells — a wall you squint at. A week you
+     can actually read: seven real columns, each app a named chip with the day's
+     entry count, paged ‹ › through history. The quarter survives below as a
+     fold-out overview, because the long arc is still worth a glance — it is
+     just not worth the whole page. */
   const off = (new Date(today + 'T00:00').getDay() + 6) % 7;
   const thisMonday = R.shift(today, -off);
-  const start = R.shift(thisMonday, -7 * (WEEKS - 1));
+  const wkStart = R.shift(thisMonday, -7 * LOG_WK);
 
+  const wkCols = [...Array(7)].map((_, d) => {
+    const key = R.shift(wkStart, d);
+    const future = key > today;
+    const dt = new Date(key + 'T00:00');
+    const marks = apps
+      .filter(a => a.ok && a.days && a.days[key])
+      .map(a => `<span class="wd-chip" style="--hue:${HUE(a.id)}" title="${esc(a.name)}">
+          ${esc(a.name)}<b>${a.days[key]}</b></span>`).join('');
+    return `<div class="wday${key === today ? ' today' : ''}${future ? ' future' : ''}">
+      <div class="wd-h"><span class="wd-dow">${dt.toLocaleDateString('en-GB', { weekday: 'short' })}</span>
+        <span class="wd-n">${dt.getDate()}</span></div>
+      <div class="wd-marks">${marks || (future ? '' : '<span class="wd-none">—</span>')}</div>
+    </div>`;
+  }).join('');
+
+  const wkEnd = R.shift(wkStart, 6);
+  const fmt = k => new Date(k + 'T00:00').toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
+  const wkLabel = LOG_WK === 0 ? 'This week' : LOG_WK === 1 ? 'Last week' : `${fmt(wkStart)} – ${fmt(wkEnd)}`;
+  const weekBlock = `
+    <div class="wk-nav">
+      <button class="wk-btn" id="wk-prev" aria-label="Earlier week">‹</button>
+      <span class="wk-lab">${esc(wkLabel)}</span>
+      <button class="wk-btn" id="wk-next" aria-label="Later week" ${LOG_WK === 0 ? 'disabled' : ''}>›</button>
+    </div>
+    <div class="wgrid">${wkCols}</div>`;
+
+  /* ── the quarter, folded ── */
+  const WEEKS = 13;
+  const start = R.shift(thisMonday, -7 * (WEEKS - 1));
   const rows = [];
   for (let wk = 0; wk < WEEKS; wk++) {
-    const wkStart = R.shift(start, wk * 7);
+    const rowStart = R.shift(start, wk * 7);
     const cells = [];
     for (let d = 0; d < 7; d++) {
-      const key = R.shift(wkStart, d);
+      const key = R.shift(rowStart, d);
       const future = key > today;
       const active = apps.filter(a => a.ok && a.days && a.days[key]);
       cells.push(`<div class="cell${key === today ? ' today' : ''}${future ? ' future' : ''}" title="${esc(key)}${active.length ? ' — ' + active.map(a => a.name).join(', ') : future ? '' : ' — nothing logged'}">
         ${APP_IDS.map(id => `<i class="${!future && active.some(a => a.id === id) ? 'on' : ''}" style="--c:${HUE(id)}"></i>`).join('')}
       </div>`);
     }
-    const lab = new Date(wkStart + 'T00:00').toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
+    const lab = new Date(rowStart + 'T00:00').toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
     rows.push(`<div class="heat-row"><span class="heat-lab">${esc(lab)}</span>${cells.join('')}</div>`);
   }
 
@@ -818,6 +854,57 @@ function viewLog() {
 
   const key = `<div class="heat-key">${apps.map(a =>
     `<span class="k"><i style="--c:${HUE(a.id)}"></i>${esc(a.name)}</span>`).join('')}</div>`;
+
+  /* ── the weekly pulse ──
+     A data check, not a report card. Two numbers per app — entries this week
+     against last — because a comparison is the only shape that says whether a
+     domain is moving. The verdict names at most one slip and one climb: a
+     pulse that lists six problems is a pulse nobody reads twice. */
+  const wkSum = (a, startKey) => {
+    let n = 0, days = 0;
+    for (let d = 0; d < 7; d++) {
+      const k = R.shift(startKey, d);
+      if (k > today) break;
+      const v = (a.days || {})[k] || 0;
+      if (v) { n += v; days++; }
+    }
+    return { n, days };
+  };
+  const lastMonday = R.shift(thisMonday, -7);
+  const pulse = apps.filter(a => a.ok).map(a => {
+    const cur = wkSum(a, thisMonday), prev = wkSum(a, lastMonday);
+    return { a, cur, prev, delta: cur.n - prev.n };
+  });
+  const seen = pulse.filter(p => p.cur.n || p.prev.n);
+  const slip = seen.filter(p => p.delta < 0).sort((x, y) => x.delta - y.delta)[0] || null;
+  const climb = seen.filter(p => p.delta > 0).sort((x, y) => y.delta - x.delta)[0] || null;
+  const silentApp = pulse.map(p => ({ ...p, gap: p.a.last != null ? R.since(p.a.last) : null }))
+    .filter(p => p.gap != null && p.gap >= 4).sort((x, y) => y.gap - x.gap)[0] || null;
+  const maxN = Math.max(1, ...pulse.map(p => Math.max(p.cur.n, p.prev.n)));
+  const pulseRows = pulse.map(p => `
+    <div class="pl-row" style="--hue:${HUE(p.a.id)}">
+      <span class="pl-n">${esc(p.a.name)}</span>
+      <span class="pl-bars">
+        <i class="prev" style="width:${Math.round(p.prev.n / maxN * 100)}%"></i>
+        <i class="cur" style="width:${Math.round(p.cur.n / maxN * 100)}%"></i>
+      </span>
+      <span class="pl-v">${p.cur.n}<small>/${p.prev.n}</small></span>
+      <span class="pl-d ${p.delta > 0 ? 'up' : p.delta < 0 ? 'dn' : ''}">${
+        p.delta > 0 ? '+' + p.delta : p.delta || '·'}</span>
+    </div>`).join('');
+  const verdicts = [];
+  if (climb) verdicts.push(`<b style="color:var(--ok)">${esc(climb.a.name)}</b> is climbing — ${climb.cur.n} entries against ${climb.prev.n} last week.`);
+  if (slip) verdicts.push(`<b style="color:var(--warn)">${esc(slip.a.name)}</b> slipped — ${slip.cur.n} against ${slip.prev.n}. One entry today would turn it before the week sets.`);
+  if (silentApp) verdicts.push(`<b style="color:var(--bad)">${esc(silentApp.a.name)}</b> has been silent ${silentApp.gap} days. Silence is the only signal that compounds against you.`);
+  if (!verdicts.length) verdicts.push('Every domain moved this week. Nothing to flag — hold the line.');
+  const pulseBlock = `
+    <div class="sect">
+      <div class="sect-h"><h3>The weekly pulse</h3><span class="aside">this week vs last</span></div>
+      <div class="card pad">
+        <div class="pl">${pulseRows}</div>
+        <div class="pl-verdict">${verdicts.map(v => `<p>${v}</p>`).join('')}</div>
+      </div>
+    </div>`;
 
   /* Per-app: days logged, and the longest recent silence — the number that
      actually says which domain is slipping. */
@@ -850,13 +937,19 @@ function viewLog() {
     <header class="masthead tight">
       <p class="eyebrow">Everything, one surface</p>
       <h1>Log</h1>
-      <p class="sub">A quarter. Each day is one cell split six ways, one sliver per app.
-      A sliver missing all the way down a column is the domain you are losing.</p>
+      <p class="sub">One week, readable. Every chip is an app that wrote something that
+      day, with how many entries. A day with no chips is a day nothing was logged.</p>
     </header>
-    <div class="card pad">
-      <div class="heat"><div class="heat-in">${dowHead}${rows.join('')}</div></div>
-      ${key}
-    </div>
+    <div class="card pad">${weekBlock}</div>
+    ${pulseBlock}
+    <details class="acc-d" style="margin-top:12px"><summary>The quarter at a glance</summary>
+      <div class="in">
+        <div class="heat"><div class="heat-in">${dowHead}${rows.join('')}</div></div>
+        ${key}
+        <p class="small" style="margin-top:8px">Each day one cell split six ways, one sliver
+        per app. A sliver missing all the way down a column is the domain you are losing.</p>
+      </div>
+    </details>
     <div class="sect">
       <div class="sect-h"><h3>Days logged · last touched</h3><span class="aside">13 weeks</span></div>
       <div class="card pad"><div class="tots">${totals}</div></div>
@@ -865,6 +958,9 @@ function viewLog() {
       <div class="sect-h"><h3>Activity</h3><span class="aside">${feed.length}</span></div>
       <div class="card pad"><div class="feed">${feedHtml}</div></div>
     </div>`;
+
+  $('#wk-prev').onclick = () => { LOG_WK = Math.min(LOG_WK + 1, 12); viewLog(); };
+  $('#wk-next').onclick = () => { LOG_WK = Math.max(LOG_WK - 1, 0); viewLog(); };
 }
 
 /* ══════════════════════════════════════════════════════════════════
