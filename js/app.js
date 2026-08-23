@@ -163,7 +163,10 @@ const grouping = () => { try { return localStorage.getItem(GKEY) === 'app' ? 'ap
 const setGrouping = g => { try { localStorage.setItem(GKEY, g); } catch {} };
 
 function renderQueue() {
-  /* Inside the iOS app, every rebuild also refreshes the lock screen. */
+  /* Inside the iOS app, every rebuild also refreshes the lock screen. The
+     queue is parked on window for the bridge's tick handler, which must find
+     tasks by key without importing this module's internals. */
+  window.__DIWAN_Q = Q;
   NB.publish(Q);
   const box = $('#queue'); if (!box) return;
   const sub = $('#q-sub');
@@ -1628,6 +1631,7 @@ async function refresh() {
   /* The day's shape on the app icon, glanceable with nothing open. */
   N.badge(Q.all.filter(t => !t.done && !t.isNote).length);
   paint();
+  window.__DIWAN_Q = Q;
   NB.publish(Q);
   syncAgenda();
 }
@@ -1635,6 +1639,12 @@ async function refresh() {
 /* The watch's morning arrives once the native shell has read it; a write to
    Compound's store means the queue it feeds must be rebuilt. */
 NB.install(() => refresh());
+
+/* Inside the shell, the page sheds its own chrome — masthead and bottom nav —
+   because the native tab bar IS the navigation there, and two navs stacked is
+   the exact clutter the merge was meant to end. The class gates CSS only;
+   nothing behavioural hangs off it. */
+if (window.DIWAN_NATIVE) document.documentElement.classList.add('native');
 
 /* The service worker asks an open window to route rather than opening a second copy. */
 navigator.serviceWorker?.addEventListener('message', e => {

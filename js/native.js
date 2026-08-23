@@ -23,7 +23,14 @@ export function publish(Q) {
   try {
     const items = Q.all.concat(Q.done || []).map(t => ({
       key: t.key, label: t.label, ico: t.ico || '◈', app: t.app,
-      at: t.at ? t.at.toISOString() : null, done: !!t.done
+      at: t.at ? t.at.toISOString() : null, done: !!t.done,
+      /* `tickable` decides whether the lock screen offers a Done button at all.
+         A journal, a protein count, a field entry — things a checkbox would
+         fake — carry false and get no button. Full control never means fake
+         logging. `hash` is the row's own deep link, so tapping a notification
+         lands inside the task's app, not on a front page. */
+      tickable: !!t.action,
+      hash: t.href ? String(t.href) : null
     }));
     handler().postMessage({
       type: 'queue',
@@ -44,7 +51,61 @@ export function install(onChange) {
   if (!inApp()) return;
   window.diwanFromNative = async (msg) => {
     try {
-      if (!msg || msg.type !== 'health') return;
+      if (!msg) return;
+
+      /* ── ticks from the lock screen ──
+         Each key is performed through the task's own action — the same code
+         path as tapping the row — and ACKed whether it succeeded or was moot
+         (already done, task gone). Only an ACK removes it from the shell's
+         queue, so a tick can never be lost to a mid-delivery crash; and a
+         tick that cannot ever be fulfilled is dropped WITH its ACK rather
+         than retried forever. */
+      if (msg.type === 'ticks' && Array.isArray(msg.keys)) {
+        const { queue } = window.__DIWAN_Q ? { queue: window.__DIWAN_Q } : { queue: null };
+        const W = await import('./write.js');
+        const acked = [];
+        for (const key of msg.keys) {
+          acked.push(key);
+          const t = queue && queue.all.concat(queue.done || []).find(x => x.key === key);
+          if (!t || t.done || !t.action) continue;      // moot — ack and move on
+          try { const r = await W.perform(t.action); if (r.ok) t.done = true; } catch { }
+        }
+        handler().postMessage({ type: 'ack', keys: acked });
+        if (onChange) onChange();
+        return;
+      }
+
+      /* ── a native workout, reconciled into Compound ──
+         Same ids on both sides (the native split was generated from data.js),
+         so this is a merge rather than a translation. Per exercise, per set
+         index: a done native set overwrites; an empty native slot never
+         erases something logged on the web. */
+      if (msg.type === 'sessions' && Array.isArray(msg.sessions)) {
+        const S = await import('../../compound/js/store.js');
+        let wrote = false;
+        for (const ns of msg.sessions) {
+          if (!ns || !ns.date || !ns.dayId) continue;
+          const key = `${ns.date}|${ns.dayId}`;
+          const cur = S.getSession(key) || { sets: {} };
+          cur.sets ||= {};
+          for (const [ex, rows] of Object.entries(ns.sets || {})) {
+            const dst = (cur.sets[ex] ||= []);
+            (rows || []).forEach((r, i) => {
+              while (dst.length <= i) dst.push({ w: null, reps: null, rir: null, done: false });
+              if (r && r.done) dst[i] = { w: r.w ?? null, reps: r.reps ?? null,
+                                          rir: r.rir ?? null, done: true };
+            });
+          }
+          if (ns.startedAt && !cur.startedAt) cur.startedAt = ns.startedAt;
+          if (ns.finishedAt) cur.finishedAt = ns.finishedAt;
+          S.saveSession(key, cur);
+          wrote = true;
+        }
+        if (wrote && onChange) onChange();
+        return;
+      }
+
+      if (msg.type !== 'health') return;
       const date = new Date(Date.now() - new Date().getTimezoneOffset() * 6e4).toISOString().slice(0, 10);
       try { localStorage.setItem('diwan.health', JSON.stringify({ ...msg, date, at: Date.now() })); } catch {}
 

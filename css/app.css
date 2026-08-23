@@ -735,3 +735,13 @@ details.acc-d>.in{padding:4px 15px 15px}
 .pl-d.up{color:var(--ok)} .pl-d.dn{color:var(--warn)}
 .pl-verdict{margin-top:12px;border-top:1px solid var(--line);padding-top:10px}
 .pl-verdict p{font-size:12.5px;line-height:1.55;color:var(--tx-2);margin-top:4px}
+
+/* ── inside the native shell ───────────────────────────
+   The app's tab bar is the navigation there; the page's own chrome would sit
+   stacked beneath it. The page keeps everything functional and sheds only
+   what the shell already provides. */
+html.native .nav{display:none}
+html.native #menu{display:none}
+html.native .masthead{padding-top:16px}
+html.native body{padding-bottom:12px}
+html.native .wrap{padding-bottom:20px}
