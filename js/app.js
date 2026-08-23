@@ -84,6 +84,15 @@ function ago(dateKey) {
 /* ══════════════════════════════════════════════════════════════════
    Ticking
    ══════════════════════════════════════════════════════════════════ */
+/* The queue's week picture is computed at build time, so a tick has to update it by
+   hand or today's box stays grey until the next full rebuild — filling the box is
+   half the reward of ticking. */
+function markWeek(t, on) {
+  if (!t.wk) return;
+  if (t.wk.days) { const d = t.wk.days.find(x => x.today); if (d) d.on = on; }
+  else t.wk.hits = Math.max(0, Math.min(t.wk.n, t.wk.hits + (on ? 1 : -1)));
+}
+
 async function tick(task, action) {
   const act = action || task.action;
   if (!act) return;
@@ -92,6 +101,7 @@ async function tick(task, action) {
 
   task.done = res.done !== false;
   if (act.state) task.state = act.state;
+  markWeek(task, task.done);
   lastUndo = async () => {
     await res.undo();
     task.done = false; task.state = 'none';
@@ -313,11 +323,42 @@ function group(title, list, { split = false } = {}) {
   return `<div class="sect">${head}${blocks}</div>`;
 }
 
+/* ── the week, drawn ──────────────────────────────────────────────
+   Two shapes from tasks.js. Daily → seven boxes Mon–Sun, grey until the day it
+   was done turns green, today ringed. n-per-week → n boxes, filled as they are
+   earned; which day filled which box does not matter and is not shown. */
+function wkBoxes(t) {
+  if (!t.wk) return '';
+  if (t.wk.days) {
+    return `<span class="wkb" title="This week, Mon–Sun">${t.wk.days.map(d =>
+      `<i class="${d.on ? 'on' : ''}${d.today ? ' td' : ''}${d.fut ? ' fu' : ''}"></i>`).join('')}</span>`;
+  }
+  const { n, hits } = t.wk;
+  return `<span class="wkb" title="${hits} of ${n} this week">${[...Array(n)].map((_, i) =>
+    `<i class="${i < hits ? 'on' : ''}"></i>`).join('')}</span>`;
+}
+
+/* Expiry, said in as few characters as the truth allows. */
+function endsChip(t) {
+  if (!t.ends) return '';
+  const today = new Date(); today.setHours(0, 0, 0, 0);
+  const d = new Date(t.ends + 'T00:00');
+  const days = Math.round((d - today) / 864e5);
+  const say = days < 0 ? `${-days}d over` : days === 0 ? 'today'
+            : days === 1 ? 'tmrw' : days < 7 ? d.toLocaleDateString('en-GB', { weekday: 'short' })
+            : `${days}d`;
+  return `<span class="t-ends${days <= 0 ? ' hot' : days <= 1 ? ' warm' : ''}"
+    title="Window closes ${esc(t.ends)}">${esc(say)}</span>`;
+}
+
 function row(t) {
   /* A once-a-day thing says "today"; a window closing says how much of it is left. */
   const countdown = t.at ? '' : (t.daily ? 'today' : leftLabel(t.left, t.over));
   const time = t.at ? hhmm(t.at) : (countdown || (t.mins ? `${t.mins}m` : ''));
   const urgent = !t.at && !t.daily && (t.over || t.tight || (t.left != null && t.left <= 0));
+  /* The body is a LINK. Every row lands on its own place in its own app — the row in
+     Compound expanded, the ritual's runner open, the exact Sakina page — because the
+     whole point of the register is that finding the task is never a second task. */
   return `<div class="trow${t.isNote ? ' note-row' : ''}" style="--hue:${HUE(t.app)}" data-key="${esc(t.key)}">
     ${t.startSession
       ? `<button class="tick play" data-start="${esc(t.startSession)}" aria-label="Start ${esc(t.label)}">▶</button>`
@@ -325,16 +366,18 @@ function row(t) {
       ? `<button class="tick" data-tick="${esc(t.key)}" aria-label="Mark ${esc(t.label)} done"></button>`
       : `<a class="tick link" href="${esc(inward(t.href, t.app))}" aria-label="Open ${esc(t.label)}">→</a>`}
     <span class="t-when${urgent ? ' urgent' : ''}">${esc(time)}</span>
-    <span class="t-body">
-      <span class="t-label">${esc(t.label)}</span>
-      <span class="t-note"><b style="color:${HUE(t.app)}">${esc(APP_NAME[t.app] || t.app)}</b>${
-        /* A raised proposal carries the app's own name as its note, which was fine
-           when the row did not print one. Now that every row names its app in
-           words, echoing it gives "Āfāq · Āfāq ·". Drop the echo, keep the note. */
-        t.note && t.note !== (APP_NAME[t.app] || t.app) ? ' · ' + esc(t.note) : ''}${
-        t.cadence ? ' · ' + esc(t.cadence) : ''}${
-        t.brief && t.isNote ? ' · ' + esc(t.brief.slice(0, 70)) : ''}</span>
-    </span>
+    <a class="t-body" href="${esc(inward(t.href, t.app))}">
+      ${t.ico ? `<span class="t-ico">${esc(t.ico)}</span>` : ''}
+      <span class="t-mid">
+        <span class="t-label">${esc(t.label)}</span>
+        <span class="t-note"><b style="color:${HUE(t.app)}">${esc(APP_NAME[t.app] || t.app)}</b>${
+          t.note && t.note !== (APP_NAME[t.app] || t.app) ? ' · ' + esc(t.note) : ''}${
+          t.cadence ? ' · ' + esc(t.cadence) : ''}${
+          t.brief && t.isNote ? ' · ' + esc(t.brief.slice(0, 70)) : ''}</span>
+      </span>
+    </a>
+    ${wkBoxes(t)}
+    ${endsChip(t)}
     ${t.alt ? `<button class="t-alt" data-alt="${esc(t.key)}">${esc(t.alt.label)}</button>` : ''}
     <i class="t-dot"></i>
   </div>`;
@@ -349,8 +392,11 @@ function doneBlock(done) {
         ${t.action ? `<button class="tick on" data-untick="${esc(t.key)}" aria-label="Undo ${esc(t.label)}">✓</button>`
                    : '<span class="tick on static">✓</span>'}
         <span class="t-when">${t.at ? esc(hhmm(t.at)) : ''}</span>
-        <span class="t-body"><span class="t-label">${esc(t.label)}</span>
-          <span class="t-note">${esc(t.state && t.state !== 'prayed' ? t.state : t.note)}</span></span>
+        <a class="t-body" href="${esc(inward(t.href, t.app))}">
+          ${t.ico ? `<span class="t-ico">${esc(t.ico)}</span>` : ''}
+          <span class="t-mid"><span class="t-label">${esc(t.label)}</span>
+          <span class="t-note">${esc(t.state && t.state !== 'prayed' ? t.state : t.note)}</span></span></a>
+        ${wkBoxes(t)}
         <i class="t-dot"></i>
       </div>`).join('')}</div>
   </div>`;
@@ -391,6 +437,7 @@ function wireRows() {
       const res = await W.perform(act);
       if (!res.ok) { toast(res.error, { bad: true }); return; }
       t.done = false; t.state = 'none';
+      markWeek(t, false);
       renderQueue(); toast('Unticked.');
     };
   });

@@ -31,7 +31,7 @@
  */
 
 import * as A from '../vendor/adhan.esm.min.js';
-import { iso, shift, since } from './read.js';
+import { iso, shift, since, between } from './read.js';
 import * as D from './store.js';
 
 /* ── the clock ─────────────────────────────────────────────────────
@@ -219,6 +219,25 @@ function schedulePeriodic(i, S, date, hour) {
   };
 }
 
+/* ── the week, as boxes ────────────────────────────────────────────
+   Every task carries a small picture of its own week, in the shape Musaed asked
+   for: one box per expected occasion, grey until the day it was done turns it
+   green. Two shapes cover everything:
+
+     { days:[{d,on,today,fut}×7] }   daily things — the week Mon→Sun
+     { n, hits }                     n-per-week things — n boxes, `hits` filled
+
+   Fortnightly and slower carry no boxes at all; a single box for a quarter says
+   nothing, so those carry an expiry date instead. */
+function weekDates(date) {
+  const dow = (new Date(date + 'T00:00').getDay() + 6) % 7;
+  const mon = shift(date, -dow);
+  return [...Array(7)].map((_, i) => shift(mon, i));
+}
+const wkDays = (date, hit) =>
+  ({ days: weekDates(date).map(d => ({ d, on: !!hit(d), today: d === date, fut: d > date })) });
+const endOfWeek = date => weekDates(date)[6];
+
 /* ══════════════════════════════════════════════════════════════════
    Build
    ══════════════════════════════════════════════════════════════════ */
@@ -236,6 +255,7 @@ export async function buildQueue(snap) {
         import('../../compound/js/store.js'),
         import('../../compound/js/data.js')
       ]);
+      const wkOf = id => wkDays(date, d => { const e = S.getHEntry(d, id); return e && e.done; });
       /* Morning light is "soon after waking" in Compound's own words, so it hangs off
          the wake time actually logged rather than a fixed hour. On a day with no wake
          time yet it falls back to the nominal one. */
@@ -262,11 +282,19 @@ export async function buildQueue(snap) {
           if (sched.at) when = sched.at;
         }
 
+        /* The week picture and the expiry, from the cadence itself. */
+        const wk = daily ? wkOf(i.id)
+                 : i.cad.t === 'w' ? { n: i.cad.n, hits: S.weekCount(date, i.id) }
+                 : null;
+        const ends = i.cad.t === 'w' ? endOfWeek(date)
+                   : sched ? (sched.nextDay || (sched.left != null ? shift(date, Math.max(0, sched.left)) : null))
+                   : null;
         out.push({
-          key: 'compound:' + i.id, app: 'compound', label: i.name,
+          key: 'compound:' + i.id, app: 'compound', label: i.name, ico: i.ico,
           note: (H.DOMAINS[i.dom] || {}).label || i.dom, domain: i.dom,
           brief: i.brief || '', at: when, slot: when ? null : 'any',
           done, tier: i.id === 'wake' ? 'foundation' : i.dom === 'test' ? 'reality' : 'due',
+          wk, ends,
           ...(sched ? { cadence: sched.note, left: sched.left, over: sched.over,
                         nextDay: sched.nextDay } : { cadence: null }),
           /* A curfew warned about after it has passed is a reprimand, not a reminder,
@@ -275,25 +303,90 @@ export async function buildQueue(snap) {
           ...(i.id === 'caff' && when ? { notifyAt: new Date(when.getTime() - 15 * 60_000) } : {}),
           words: w(i.id, [i.name.toLowerCase()]),
           action: { kind: 'compound.h', date, id: i.id },
-          href: comp.url
+          /* Lands on the exact row, expanded — not on the top of the page. */
+          href: comp.url + '#/?hx=' + i.id
         });
       }
       /* Today's split, if there is one. Sets need real numbers, so this links out. */
       const dayId = (DATA.SCHEDULE.find(x => x.day === new Date().getDay()) || {}).workout;
+      const sessions = S.getSessions();
+      const wkWorkout = wkDays(date, d =>
+        Object.entries(sessions).some(([k, v]) => k.startsWith(d + '|') && v && v.finishedAt));
       if (dayId) {
         const s = S.getSession(S.sessionKey(dayId, date));
         const n = s ? Object.values(s.sets || {}).flat().filter(r => r && r.done).length : 0;
         out.push({
-          key: 'compound:workout', app: 'compound', label: `${dayId} — today's session`,
+          key: 'compound:workout', app: 'compound', label: `${dayId} — today's session`, ico: '🏋️',
           note: 'Workout', domain: 'workout', brief: n ? `${n} sets logged` : 'Sets, reps, RIR and the rest timer — right here',
-          at: at(HOUR.workout), done: n > 0, tier: 'due',
+          at: at(HOUR.workout), done: n > 0, tier: 'due', wk: wkWorkout,
           words: ['workout', 'session', 'gym', 'trained', 'lifted', 'training'],
           /* Not a tick and not a link — a workout opens the live panel, which is the
              one place per-set entry and a wall-clock rest timer can actually live. */
           startSession: dayId,
-          action: null, href: comp.url
+          action: null, href: comp.url + '#/day/' + dayId
         });
       }
+
+      /* ── Workout fuel — found by the census, missing until 2026-08-24 ──
+         Compound tracks four fuel habits on its Today page and none of them were
+         here. Creatine is explicitly "training or not", so it is daily; the
+         pre-workout carbs and the intra-session drink only exist on a session
+         day; protein is a number, so its row links rather than pretending a tick
+         measured anything. */
+      try {
+        const f = S.getFuel(date);
+        const wkFuel = id => wkDays(date, d => !!S.getFuel(d)[id]);
+        if (dayId) {
+          out.push({
+            key: 'compound:fuel:preworkout', app: 'compound', label: 'Carbs + caffeine', ico: '⚡',
+            note: 'Fuel', domain: 'fuel', brief: '1 hour before training',
+            at: at(HOUR.workout - 1), done: !!f.preworkout, tier: 'due', wk: wkFuel('preworkout'),
+            words: ['preworkout', 'pre workout', 'carbs and caffeine'],
+            action: { kind: 'compound.fuel', date, id: 'preworkout' },
+            href: comp.url + '#/day/' + dayId
+          });
+          out.push({
+            key: 'compound:fuel:gatorade', app: 'compound', label: 'Gatorade in hand', ico: '🥤',
+            note: 'Fuel', domain: 'fuel', brief: 'Sip through the session',
+            at: at(HOUR.workout), done: !!f.gatorade, tier: 'due', wk: wkFuel('gatorade'),
+            words: ['gatorade', 'electrolytes'],
+            action: { kind: 'compound.fuel', date, id: 'gatorade' },
+            href: comp.url + '#/day/' + dayId
+          });
+        }
+        out.push({
+          key: 'compound:fuel:creatine', app: 'compound', label: 'Creatine', ico: '💊',
+          note: 'Fuel', domain: 'fuel', brief: '5 g, training or not — it is a saturation model',
+          at: at(HOUR.fuel2), done: !!f.creatine, tier: 'due', wk: wkFuel('creatine'),
+          words: ['creatine'],
+          action: { kind: 'compound.fuel', date, id: 'creatine' },
+          href: comp.url + '#/'
+        });
+        const PROT_GOAL = 130;
+        out.push({
+          key: 'compound:fuel:protein', app: 'compound', label: `Protein — ${f.protein || 0}/${PROT_GOAL} g`, ico: '🥩',
+          note: 'Fuel', domain: 'fuel', brief: 'Logged across the day, in the app',
+          at: null, slot: 'any', done: (f.protein || 0) >= PROT_GOAL, tier: 'due', daily: true,
+          wk: wkDays(date, d => (S.getFuel(d).protein || 0) >= PROT_GOAL),
+          words: ['protein'],
+          action: null, href: comp.url + '#/', cta: 'Count it there'
+        });
+      } catch { /* fuel store not readable; the rest of Compound still stands */ }
+
+      /* ── The weekly wearable numbers — Review feeds on them ── */
+      try {
+        const wkKey = S.weekStart(date);
+        const o = (S.getOura() || {})[wkKey] || {};
+        out.push({
+          key: 'compound:oura', app: 'compound', label: 'Oura numbers', ico: '💍',
+          note: 'Review', domain: 'test', brief: 'This week’s sleep and readiness, into the Review page',
+          at: null, slot: 'any', done: Object.keys(o).length > 0, tier: 'reality',
+          wk: { n: 1, hits: Object.keys(o).length ? 1 : 0 }, ends: endOfWeek(date),
+          cadence: '1× week',
+          words: ['oura', 'ring'],
+          action: null, href: comp.url + '#/review', cta: 'Enter them'
+        });
+      } catch { /* same */ }
     } catch { /* reader already reported it; queue simply omits Compound */ }
   }
 
@@ -319,17 +412,21 @@ export async function buildQueue(snap) {
            and ticks the scalp massage instead. Better to be told it is not due. */
         const dormant = !done && (n === null || n > 0);
         const when = r.slot === 'am' ? at(HOUR.jamalAm) : r.slot === 'pm' ? at(HOUR.jamalPm) : null;
+        const dailyR = r.cadence && r.cadence.type === 'daily';
         out.push({
-          key: 'jamal:' + r.id, app: 'jamal', label: r.name, note: 'Ritual',
+          key: 'jamal:' + r.id, app: 'jamal', label: r.name, note: 'Ritual', ico: r.glyph,
           domain: 'ritual', mins: r.mins, block: r.slot,
           at: dormant ? null : when, slot: when ? null : 'any', done, dormant, tier: 'due',
           /* dueIn is already a day count: 0 is today, negative is that many days late. */
           left: dormant ? n : (n <= 0 ? n : null), over: !dormant && n < 0,
           cadence: (!dormant && n < 0) ? `${-n}d past its cadence` : null,
+          wk: dailyR ? wkDays(date, d => !!(st.done[d] && st.done[d][r.id])) : null,
+          ends: (!dailyR && n != null && n >= 0) ? shift(date, n) : null,
           brief: canTick ? (r.kicker || '') : 'Open Jamāl once and these become tickable here',
           words: w(r.id, [r.name.toLowerCase()]),
           action: canTick ? { kind: 'jamal.ritual', date, id: r.id } : null,
-          href: jam.url + '#/rituals'
+          /* Opens the ritual's own runner, steps and timers included. */
+          href: jam.url + '#/rituals?run=' + r.id
         });
       }
 
@@ -365,9 +462,10 @@ export async function buildQueue(snap) {
         if (!due && (left == null || left > lead)) continue;
         out.push({
           key: 'jamal:cab:' + c.id, app: 'jamal', label: c.name, note: 'Replace · ' + (c.cat || ''),
-          domain: 'cabinet', brief: c.note || '',
+          ico: '🧴', domain: 'cabinet', brief: c.note || '',
           at: null, slot: 'any', done: false, tier: 'due',
           left, over: left != null && left < 0, cadence: why,
+          ends: left != null ? shift(date, Math.max(0, left)) : null,
           words: [c.name.toLowerCase()],
           action: canTick ? { kind: 'jamal.cab', id: c.id } : null,
           href: jam.url + '#/log'
@@ -381,9 +479,10 @@ export async function buildQueue(snap) {
          unrated is a day that page cannot use. */
       if ((J.CONCERNS || []).length && !(st.sev || {})[date]) {
         out.push({
-          key: 'jamal:sev', app: 'jamal', label: 'Rate your skin', note: 'Skin',
+          key: 'jamal:sev', app: 'jamal', label: 'Rate your skin', note: 'Skin', ico: '🪞',
           domain: 'severity', brief: `${J.CONCERNS.length} fronts, 0–4 each — this is what the trend is drawn from`,
           at: null, slot: 'any', done: false, tier: 'due', daily: true,
+          wk: wkDays(date, d => !!(st.sev && st.sev[d])),
           words: ['skin', 'rate', 'rating', 'severity'],
           action: null, href: jam.url + '#/skin', cta: 'Rate them'
         });
@@ -396,10 +495,12 @@ export async function buildQueue(snap) {
         if (shadow && covered[shadow]) continue;           // owned next door, already answered
         if (st.inside[date] && st.inside[date][m.id] != null) continue;
         const tog = m.type === 'tog';
+        const IN_ICO = { sleep:'😴', water:'💧', sun:'🌤️', train:'🏋️', protein:'🥩', clean:'🍚', salah:'🕌', calm:'🌙' };
         out.push({
-          key: 'jamal:in:' + m.id, app: 'jamal', label: m.lbl, note: 'Inside',
+          key: 'jamal:in:' + m.id, app: 'jamal', label: m.lbl, note: 'Inside', ico: IN_ICO[m.id],
           domain: 'inside', brief: tog ? '' : `Needs a number — ${m.unit || ''}`.trim(),
           at: null, slot: 'any', done: false, tier: 'due',
+          wk: wkDays(date, d => !!(st.inside[d] && st.inside[d][m.id] != null)),
           words: w(m.id, [m.lbl.toLowerCase()]),
           action: (tog && canTick) ? { kind: 'jamal.inside', date, id: m.id, value: 1 } : null,
           href: jam.url
@@ -420,9 +521,13 @@ export async function buildQueue(snap) {
       for (const p of PRAYER_ORDER) {
         const state = today[p] || 'none';
         out.push({
-          key: 'sakina:' + p, app: 'sakina', label: PRAYER_LABEL[p], note: 'Prayer',
+          key: 'sakina:' + p, app: 'sakina', label: PRAYER_LABEL[p], note: 'Prayer', ico: '🕌',
           domain: 'prayer', at: times[p], done: state !== 'none', state,
           tier: 'prayer', prayer: p,
+          wk: wkDays(date, d => {
+            const day = (sak.prayerHist || {})[d];
+            return day && day[p] && day[p] !== 'none';
+          }),
           brief: canTick ? '' : 'Open Sakina once and these become tickable here',
           /* Firm mode surfaces a passed, unmarked prayer as outstanding. Sakina itself
              would not: its rule is that a gap is never turned into a failure. This is a
@@ -460,19 +565,21 @@ export async function buildQueue(snap) {
       const medAt = at(wokeAt != null ? Math.min(wokeAt + 0.34, 11) : 7.34);
 
       out.push({
-        key: 'sakina:meditation', app: 'sakina', label: 'Meditation', note: 'Practice',
+        key: 'sakina:meditation', app: 'sakina', label: 'Meditation', note: 'Practice', ico: '🧘',
         domain: 'meditation', brief: 'Arriving in the day. Silence is the practice, not the gap between words.',
         at: medAt, done: !!prac.meditation, tier: 'due',
+        wk: wkDays(date, d => !!D.practiceOn(d).meditation),
         words: ['meditate', 'meditation', 'breathwork'],
         action: { kind: 'diwan.practice', date, which: 'meditation' },
         href: sak.url + 'make/meditation/', cta: 'Make one'
       });
 
       out.push({
-        key: 'sakina:journal', app: 'sakina', label: 'Journal', note: 'Practice',
+        key: 'sakina:journal', app: 'sakina', label: 'Journal', note: 'Practice', ico: '📓',
         domain: 'journal',
         brief: 'Before the affirmations. A line is enough — held in the head it circles.',
         at: at(21), done: !!sak.journalToday, tier: 'due',
+        wk: wkDays(date, d => (sak.journalDates || []).includes(d)),
         words: ['journal', 'wrote', 'writing'],
         /* Not tickable: writing something is the whole action, and Sakina records it,
            so doneness comes from there rather than from a claim made here. `recordedBy`
@@ -481,9 +588,10 @@ export async function buildQueue(snap) {
       });
 
       out.push({
-        key: 'sakina:affirmations', app: 'sakina', label: 'Affirmations', note: 'Practice',
+        key: 'sakina:affirmations', app: 'sakina', label: 'Affirmations', note: 'Practice', ico: '🎧',
         domain: 'affirmations', brief: 'On the way down, not something to concentrate on.',
         at: at(22.25), done: !!prac.affirmations, tier: 'due',
+        wk: wkDays(date, d => !!D.practiceOn(d).affirmations),
         words: ['affirmations', 'affirmation', 'listened'],
         action: { kind: 'diwan.practice', date, which: 'affirmations' },
         href: sak.url + 'library/', cta: 'Open the library'
@@ -493,7 +601,7 @@ export async function buildQueue(snap) {
     if (sak.ok && sak.started) {
       const staleMood = !sak.stat.some(s => s.l === 'Last mood' && s.v === 'today');
       if (staleMood) out.push({
-        key: 'sakina:mood', app: 'sakina', label: 'How are you', note: 'Mood',
+        key: 'sakina:mood', app: 'sakina', label: 'How are you', note: 'Mood', ico: '🌗',
         domain: 'mood', brief: 'Two axes — pleasant/unpleasant and high/low energy',
         at: null, slot: 'any', done: false, tier: 'due',
         words: ['mood', 'how i am', 'feeling', 'check in'],
@@ -509,12 +617,14 @@ export async function buildQueue(snap) {
   if (anb && anb.ok) {
     try {
       const A = await import('../../anbiq/js/store.js');
+      const LAB = await import('../../anbiq/js/lab.js');
       const st = A.state();
       const readToday = st.sessions.some(x => x.date === date);
       const openBooks = A.reading();
 
       out.push({
         key: 'anbiq:read', app: 'anbiq', label: openBooks.length ? `Read — ${openBooks[0].title}` : 'Read',
+        ico: '📖', wk: wkDays(date, d => st.sessions.some(x => x.date === d)),
         note: 'Reading', domain: 'reading',
         brief: openBooks.length
           ? `${openBooks[0].cursor}/${openBooks[0].pages} pages · target ${st.set.pagesPerDay || 30}/day`
@@ -529,9 +639,10 @@ export async function buildQueue(snap) {
       if (A.live().filter(c => c.text.trim()).length >= 2) {
         const doneToday = !!A.crucibleOn(date);
         out.push({
-          key: 'anbiq:crucible', app: 'anbiq', label: 'The Crucible', note: 'Recombination',
+          key: 'anbiq:crucible', app: 'anbiq', label: 'The Crucible', note: 'Recombination', ico: '⚭',
           domain: 'crucible', brief: 'Today’s pair — the two most distant claims in the lab',
           at: null, slot: 'any', done: doneToday, tier: 'due',
+          wk: wkDays(date, d => !!A.crucibleOn(d)),
           words: ['crucible', 'conjunction', 'synthesis'],
           action: null, href: anb.url + '#crucible', cta: 'Run it'
         });
@@ -544,7 +655,7 @@ export async function buildQueue(snap) {
         const late = since(pr.due);
         if (late == null || late < 0) continue;            // not due yet
         out.push({
-          key: 'anbiq:pred:' + pr.id, app: 'anbiq',
+          key: 'anbiq:pred:' + pr.id, app: 'anbiq', ico: '🔮', ends: pr.due,
           label: 'Resolve: ' + (pr.text || 'a prediction').slice(0, 60),
           note: 'Prediction', domain: 'prediction',
           brief: `You said ${Math.round((pr.conf ?? 0.5) * 100)}% · due ${pr.due}`,
@@ -554,11 +665,32 @@ export async function buildQueue(snap) {
           action: null, href: anb.url + '#research', cta: 'Resolve it'
         });
       }
+      /* ── Claims going stale — found by the census ──
+         Anbīq's whole model is that an untouched claim decays on its tier's
+         half-life, and dueForReview() is the app's own list of what is going
+         cold. Nothing surfaced it here, so the decay was invisible from the hub
+         — the exact slow failure the register exists to catch. Not tickable:
+         touching a claim without re-reading it would fake the engagement the
+         decay clock exists to measure. */
+      try {
+        const cold = LAB.dueForReview(3);
+        if (cold.length) {
+          out.push({
+            key: 'anbiq:review', app: 'anbiq', ico: '🝑',
+            label: `Claims going cold — ${cold.length}`,
+            note: 'Decay', domain: 'claims',
+            brief: `Coldest: “${(cold[0].text || '').slice(0, 70)}”`,
+            at: null, slot: 'any', done: false, tier: 'due', daily: true,
+            words: ['claims', 'claim'],
+            action: null, href: anb.url + '#claims', cta: 'Touch them'
+          });
+        }
+      } catch { /* lab needs more state than exists */ }
     } catch { /* the reader already reported it */ }
 
     for (const it of (anb.dispatch || [])) {
       out.push({
-        key: 'anbiq:d:' + it.id, app: 'anbiq', label: it.title, note: 'Dispatch',
+        key: 'anbiq:d:' + it.id, app: 'anbiq', label: it.title, note: 'Dispatch', ico: '📜',
         domain: 'dispatch', brief: (it.body || '').slice(0, 120),
         at: null, slot: 'any', done: false, tier: 'due',
         words: ['dispatch', 'read the dispatch'],
@@ -582,9 +714,17 @@ export async function buildQueue(snap) {
     const drillToday = events.some(e => e.type === 'drill' && e.at >= dayStart.getTime());
     const vocabToday = events.filter(e => e.type === 'vocab' && e.at >= dayStart.getTime()).length;
     const wantWords = (raw && raw.settings && raw.settings.dailyWords) || 5;
+    /* One pass over the event log → { type: Set(days it happened) }, so every row's
+       week boxes cost a lookup rather than a re-scan. */
+    const evDays = {};
+    for (const e of events) {
+      const d = iso(new Date(e.at));
+      (evDays[e.type] ||= new Set()).add(d);
+    }
+    const gcWk = type => wkDays(date, d => (evDays[type] || { has: () => false }).has(d));
 
     out.push({
-      key: 'gc:warmup', app: 'gc', label: 'Warm up', note: 'Voice',
+      key: 'gc:warmup', app: 'gc', label: 'Warm up', note: 'Voice', ico: '👄', wk: gcWk('drill'),
       domain: 'warmup', brief: 'Articulators, consonants, twisters — it is a timed drill',
       at: null, slot: 'any', done: drillToday, tier: 'due', left: 0, daily: true,
       words: ['warm up', 'warmup', 'twisters', 'articulation', 'drills'],
@@ -592,18 +732,48 @@ export async function buildQueue(snap) {
     });
     out.push({
       key: 'gc:words', app: 'gc', label: `Words — ${vocabToday}/${wantWords}`, note: 'Vocabulary',
+      ico: '📚', wk: gcWk('vocab'),
       domain: 'words', brief: 'Recall counts only on distinct days, so it has to be done there',
       at: null, slot: 'any', done: vocabToday >= wantWords, tier: 'due', left: 0, daily: true,
       words: ['words', 'vocab', 'vocabulary'],
       action: null, href: gc.url + '#vocab', cta: 'Open Words'
     });
     out.push({
-      key: 'gc:rep', app: 'gc', label: 'A rep', note: 'Reps',
+      key: 'gc:rep', app: 'gc', label: 'A rep', note: 'Reps', ico: '💬', wk: gcWk('rep'),
       domain: 'rep', brief: repsToday ? `${repsToday} logged today` : 'One conversation you started. Volume is the input you control.',
       at: null, slot: 'any', done: repsToday > 0, tier: 'due', left: 0, daily: true,
       words: ['rep', 'conversation', 'talked to', 'spoke to'],
-      action: raw ? { kind: 'gc.rep' } : null, href: gc.url + '#field',
+      action: raw ? { kind: 'gc.rep' } : null, href: gc.url + '#hub',
       cta: raw ? undefined : 'Open Charisma Gym'
+    });
+
+    /* ── The field log — found by the census ──
+       In the app's own words this is "the only channel from real life back in",
+       and its prescription engine treats a week with no field data as "reality
+       has gone dark". Yet it never appeared here. It wants a prediction, an
+       action and a rating, so it links rather than ticks. */
+    out.push({
+      key: 'gc:field', app: 'gc', label: 'Field entry', note: 'Field log', ico: '📓',
+      wk: gcWk('field'),
+      domain: 'field', brief: 'One real interaction: predict, act, rate. Without this the system is a closed loop.',
+      at: null, slot: 'any', done: (evDays.field || { has: () => false }).has(date),
+      tier: 'due', left: 0, daily: true,
+      words: ['field', 'interaction'],
+      action: null, href: gc.url + '#field', cta: 'Log one'
+    });
+
+    /* ── The weekly review — closes the loop, once a week ── */
+    const reviewedThisWeek = (() => {
+      const wkSet = new Set(weekDates(date));
+      return ((raw && raw.reviews) || []).some(r => wkSet.has(r.day));
+    })();
+    out.push({
+      key: 'gc:review', app: 'gc', label: 'Weekly review', note: 'Signals', ico: '📈',
+      wk: { n: 1, hits: reviewedThisWeek ? 1 : 0 }, ends: endOfWeek(date), cadence: '1× week',
+      domain: 'review', brief: 'Trends, calibration, and what next week is for',
+      at: null, slot: 'any', done: reviewedThisWeek, tier: 'due',
+      words: ['weekly review', 'review'],
+      action: null, href: gc.url + '#signals', cta: 'Close the week'
     });
   }
 
@@ -615,6 +785,7 @@ export async function buildQueue(snap) {
   if (afq) {
     try {
       const F = await import('../../afaq/js/store.js');
+      const AE = await import('../../afaq/js/engine.js');
       const st = F.state();
       const live = (st.trips || []).find(t => t.from <= date && t.to >= date && t.status !== 'idea');
       if (live) {
@@ -622,7 +793,7 @@ export async function buildQueue(snap) {
         for (const it of (day && day.items) || []) {
           out.push({
             key: 'afaq:item:' + it.id, app: 'afaq', label: it.txt || it.kind || 'Itinerary item',
-            note: live.name, domain: 'trip', brief: it.note || '',
+            ico: '🧳', note: live.name, domain: 'trip', brief: it.note || '',
             at: it.t ? at(Number(it.t.split(':')[0]) + Number(it.t.split(':')[1] || 0) / 60) : null,
             slot: it.t ? null : 'any', done: !!it.done, tier: 'due',
             words: [(it.txt || '').toLowerCase()].filter(x => x.length > 3),
@@ -634,12 +805,76 @@ export async function buildQueue(snap) {
       for (const p of (F.activePursuits() || [])) {
         const loggedToday = (p.logs || []).some(l => l.date === date);
         if (loggedToday) continue;
+        const hob = (() => { try { return AE.craftLadder(p.hobbyId); } catch { return null; } })();
         out.push({
-          key: 'afaq:pursuit:' + p.id, app: 'afaq', label: 'Practice', note: 'Craft',
+          key: 'afaq:pursuit:' + p.id, app: 'afaq',
+          label: hob && hob.n ? `Practice — ${hob.n}` : 'Practice', note: 'Craft', ico: '✦',
+          wk: wkDays(date, d => (p.logs || []).some(l => l.date === d)),
           domain: 'pursuit', brief: 'Minutes go in the app',
           at: null, slot: 'any', done: false, tier: 'due',
           words: ['practice', 'practised', 'practiced'],
           action: null, href: afq.url + '#craft', cta: 'Log it'
+        });
+      }
+
+      /* ── Watched but never scored — found by the census ──
+         The whole point of the queue is a frozen prediction compared against a
+         report afterwards. A title on 'watching' that never gets rated is a
+         prediction with no outcome — the same lie an unresolved prediction is
+         in Anbīq, so it gets the same reality tier. */
+      for (const wch of (st.watch || []).filter(x => x.status === 'watching')) {
+        const t = (() => { try { return AE.title(wch.titleId); } catch { return null; } })();
+        out.push({
+          key: 'afaq:rate:' + wch.id, app: 'afaq', ico: '🎬',
+          label: `Score it — ${t ? t.t : 'what you watched'}`,
+          note: 'Screen', domain: 'screen',
+          brief: wch.pred != null
+            ? `The model froze ${Math.round(wch.pred * 10)}/10 before you started. Say what actually happened.`
+            : 'Started, never scored — the model learns nothing until you do.',
+          at: null, slot: 'any', done: false, tier: 'reality',
+          words: [(t && t.t || '').toLowerCase()].filter(x => x.length > 3),
+          action: null, href: afq.url + '#screen', cta: 'Rate it'
+        });
+      }
+
+      /* ── The month's riding drill ──
+         "Pick one drill per month from the Ride tab" is motorcycling's own first
+         step, and the ladder knows exactly which drill is next. Shown only when
+         nothing on the curriculum has been practised for a fortnight, so it
+         nudges rather than nags. */
+      try {
+        if ((st.rides || []).length) {
+          const lad = AE.ladder();
+          const lastDrill = (st.rides || []).filter(r => (r.drills || []).length)
+            .map(r => r.date).sort().pop() || null;
+          const gap = lastDrill ? between(lastDrill, date) : null;
+          if (lad.next && (gap == null || gap >= 14)) {
+            out.push({
+              key: 'afaq:drill', app: 'afaq', ico: '🏍️',
+              label: `Drill — ${lad.next.drill.n}`,
+              note: 'Ride', domain: 'ride',
+              brief: `Next on the ladder · ${lad.next.have}/${lad.next.need} logged${gap != null ? ` · no drill in ${gap}d` : ' · never yet'}`,
+              at: null, slot: 'any', done: false, tier: 'due',
+              words: ['drill', 'ride drill'],
+              action: null, href: afq.url + '#ride', cta: 'Ride it'
+            });
+          }
+        }
+      } catch { /* ladder wants more than it has */ }
+
+      /* ── A trip that ended without a debrief ──
+         Āfāq's own lede: without expected-versus-actual a travel log is a diary
+         and predicts nothing. */
+      for (const tr of (st.trips || [])) {
+        if (tr.status === 'idea' || tr.debrief || !tr.to || tr.to >= date) continue;
+        out.push({
+          key: 'afaq:debrief:' + tr.id, app: 'afaq', ico: '🧳',
+          label: `Debrief — ${tr.name || tr.place || 'the trip'}`,
+          note: 'Travel', domain: 'travel',
+          brief: 'It ended ' + between(tr.to, date) + 'd ago. Expected versus actual, while it is still fresh.',
+          at: null, slot: 'any', done: false, tier: 'reality',
+          words: ['debrief', 'trip'],
+          action: null, href: afq.url + '#travel', cta: 'Write it'
         });
       }
     } catch { /* reported by the reader */ }
@@ -650,7 +885,7 @@ export async function buildQueue(snap) {
      appointment does not sit in a different universe from a prayer. */
   for (const t of D.todos(date)) {
     out.push({
-      key: 'diwan:todo:' + t.id, app: 'diwan', label: t.text, note: 'Today',
+      key: 'diwan:todo:' + t.id, app: 'diwan', label: t.text, note: 'Today', ico: '📌',
       domain: 'todo', brief: '', done: t.done,
       at: t.at ? at(Number(t.at.split(':')[0]) + Number(t.at.split(':')[1] || 0) / 60) : null,
       slot: t.at ? null : 'any', tier: 'due', daily: !t.at,

@@ -492,6 +492,15 @@ async function readSakina() {
 
   const today = prayers.find(p => p.date === t);
   const markedToday = today ? Object.values(today.prayers).filter(v => v !== 'none').length : 0;
+
+  /* The last seven days of prayer states and journal days, for the hub's week
+     boxes. Kept tiny — a map per day, not the records themselves. */
+  R.prayerHist = {};
+  for (const p of prayers) {
+    const gap = Math.round((new Date(t) - new Date(p.date)) / 864e5);
+    if (gap >= 0 && gap < 7) R.prayerHist[p.date] = p.prayers;
+  }
+  R.journalDates = [...new Set(journal.map(j => iso(new Date(j.at))))].slice(-14);
   const lastMood = moods.sort((a, b) => b.at - a.at)[0];
   const weekJournal = journal.filter(j => Date.now() - j.at < 7 * 864e5).length;
 

@@ -43,6 +43,15 @@ async function compoundToggle({ date, id }) {
   };
 }
 
+/* Workout fuel — Compound's own setFuel, same shape its Today page writes. */
+async function compoundFuel({ date, id }) {
+  const S = await import('../../compound/js/store.js');
+  const before = !!S.getFuel(date)[id];
+  const ok = S.setFuel({ [id]: !before }, date);
+  if (!ok) return { ok: false, error: 'Compound would not save — storage is full or blocked.' };
+  return { ok: true, done: !before, undo: () => S.setFuel({ [id]: before }, date) };
+}
+
 /* ── Jamāl ─────────────────────────────────────────────────────────
    Written raw, deliberately. jamal/js/store.js stamps `set.start` at module
    load, so importing it would write to Jamāl merely because this page opened.
@@ -292,6 +301,7 @@ async function diwanPractice({ date, which }) {
 /* ── dispatch table ───────────────────────────────────────────────── */
 const HANDLERS = {
   'compound.h':    compoundToggle,
+  'compound.fuel': compoundFuel,
   'jamal.ritual':  jamalToggle,
   'jamal.inside':  jamalInside,
   'jamal.cab':     jamalCab,
