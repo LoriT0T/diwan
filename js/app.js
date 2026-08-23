@@ -128,11 +128,35 @@ function viewToday() {
   wireCommandBar();
 }
 
+/* ══════════════════════════════════════════════════════════════════
+   THE DAY, ON TWO AXES
+
+   Time and app pull against each other and only one can be the outer grouping. The
+   first attempt nested app inside time band, which quietly destroyed the thing that
+   made the page work: inside "Later today", 08:30 sat below 07:30 because they came
+   from different apps, and "tick from the top" stopped meaning anything.
+
+   So time wins by default and is never broken — within a band the order is strictly
+   chronological. What app a row belongs to is carried in words on the row itself,
+   because a colour only tells you if you have memorised six of them.
+
+   The other axis is a toggle rather than a nesting. By app, the same rows regroup, and
+   time still orders them within each app. Two readings of one list, neither corrupting
+   the other.
+
+   The bands are chosen to answer different questions: what did I miss, what is next,
+   what is coming, what has a deadline this week, what has none.
+   ══════════════════════════════════════════════════════════════════ */
+const GKEY = 'diwan.grouping';
+const grouping = () => { try { return localStorage.getItem(GKEY) === 'app' ? 'app' : 'time'; } catch { return 'time'; } };
+const setGrouping = g => { try { localStorage.setItem(GKEY, g); } catch {} };
+
 function renderQueue() {
   const box = $('#queue'); if (!box) return;
   const sub = $('#q-sub');
   const open = Q.all.filter(t => !t.done);
   const done = Q.all.filter(t => t.done).concat(Q.done);
+  const total = open.length + done.length;
 
   if (sub) sub.textContent = open.length
     ? `${open.length} left today, in the order the day happens. Tick from the top.`
@@ -146,25 +170,93 @@ function renderQueue() {
     return;
   }
 
-  const now = Date.now();
   const head = open[0];
   const rest = open.slice(1);
-  const passed  = rest.filter(t => t.at && t.at.getTime() <= now);
-  const coming  = rest.filter(t => t.at && t.at.getTime() > now);
-  const anytime = rest.filter(t => !t.at && !t.isNote);
-  /* Kept apart from the queue: these are not a checkbox, they are the app
-     asking for something only it can take properly. */
-  const notes   = rest.filter(t => !t.at && t.isNote);
+  const mode = grouping();
 
   box.innerHTML =
     headCard(head) +
-    group('Also due now', passed, { split: true }) +
-    group('Later today', coming, { split: true }) +
-    group('Any time this week', anytime, { split: true }) +
-    group('Needs the app', notes) +
+    progressBar(done.length, total) +
+    switcher(mode) +
+    (mode === 'app' ? byApp(rest) : byTime(rest)) +
     doneBlock(done);
 
+  $('#sw-time') && ($('#sw-time').onclick = () => { setGrouping('time'); renderQueue(); });
+  $('#sw-app')  && ($('#sw-app').onclick  = () => { setGrouping('app');  renderQueue(); });
   wireRows();
+}
+
+/** How much of the day is behind you. One bar beats six counters. */
+function progressBar(doneN, total) {
+  if (!total) return '';
+  const pct = Math.round((doneN / total) * 100);
+  return `<div class="dayprog" title="${doneN} of ${total} done">
+    <i style="width:${pct}%"></i>
+    <span>${doneN} of ${total} done today</span>
+  </div>`;
+}
+
+function switcher(mode) {
+  return `<div class="switch" role="tablist">
+    <button id="sw-time" role="tab" aria-selected="${mode === 'time'}" class="${mode === 'time' ? 'on' : ''}">By time</button>
+    <button id="sw-app"  role="tab" aria-selected="${mode === 'app'}"  class="${mode === 'app' ? 'on' : ''}">By app</button>
+  </div>`;
+}
+
+/* ── the time axis ───────────────────────────────────────────────── */
+function byTime(rest) {
+  const now = Date.now();
+  const soon = now + 3 * 3600e3;
+
+  const overdue = rest.filter(t => t.at && t.at.getTime() <= now);
+  const next    = rest.filter(t => t.at && t.at.getTime() > now && t.at.getTime() <= soon);
+  const later   = rest.filter(t => t.at && t.at.getTime() > soon);
+  /* A deadline this week is a different kind of thing from something with no date at
+     all, and burying them together is how the cabinet went unnoticed for a month. */
+  const week    = rest.filter(t => !t.at && !t.isNote && (t.over || t.left != null));
+  const someday = rest.filter(t => !t.at && !t.isNote && !t.over && t.left == null);
+  const notes   = rest.filter(t => t.isNote);
+
+  const byClock = (a, b) => a.at - b.at;
+  /* "Missed" is a verdict; "earlier today" is a fact. Thirty rows under a word that
+     blames you is how a list stops being opened. */
+  return band('Earlier today', overdue.sort(byClock), 'late')
+       + band('Next few hours', next.sort(byClock))
+       + band('Later today', later.sort(byClock))
+       + band('Running out this week', week.sort((a, b) =>
+           ((a.left ?? 99) - (b.left ?? 99)) || (a.over === b.over ? 0 : a.over ? -1 : 1)))
+       + band('No deadline', someday)
+       + band('Needs the app', notes);
+}
+
+function band(title, list, cls) {
+  if (!list.length) return '';
+  return `<div class="sect">
+    <div class="sect-h"><h3 class="${cls || ''}">${esc(title)}</h3><span class="aside">${list.length}</span></div>
+    <div class="rows">${list.map(row).join('')}</div>
+  </div>`;
+}
+
+/* ── the app axis ────────────────────────────────────────────────── */
+function byApp(rest) {
+  const byId = {};
+  for (const t of rest) (byId[t.app] ||= []).push(t);
+
+  return APP_ORDER.filter(id => byId[id]).map(id => {
+    const rows = byId[id].sort((a, b) => {
+      /* Time still orders within an app — the axis changes, the clock does not. */
+      if (a.at && b.at) return a.at - b.at;
+      if (a.at) return -1;
+      if (b.at) return 1;
+      return (a.left ?? 99) - (b.left ?? 99);
+    });
+    const doneHere = Q.all.concat(Q.done).filter(t => t.app === id && t.done).length;
+    return `<div class="sect">
+      <div class="sect-h"><h3 style="color:${HUE(id)}">${esc(APP_NAME[id] || id)}</h3>
+        <span class="aside">${rows.length} open${doneHere ? ` · ${doneHere} done` : ''}</span></div>
+      <div class="rows">${rows.map(row).join('')}</div>
+    </div>`;
+  }).join('');
 }
 
 /* The top of the list, enlarged. Same row, more room — it is not a different
@@ -235,7 +327,9 @@ function row(t) {
     <span class="t-when${urgent ? ' urgent' : ''}">${esc(time)}</span>
     <span class="t-body">
       <span class="t-label">${esc(t.label)}</span>
-      <span class="t-note">${esc(t.note)}${t.cadence ? ' · ' + esc(t.cadence) : ''}${t.brief && t.isNote ? ' · ' + esc(t.brief.slice(0, 80)) : ''}</span>
+      <span class="t-note"><b style="color:${HUE(t.app)}">${esc(APP_NAME[t.app] || t.app)}</b>${
+        t.note ? ' · ' + esc(t.note) : ''}${t.cadence ? ' · ' + esc(t.cadence) : ''}${
+        t.brief && t.isNote ? ' · ' + esc(t.brief.slice(0, 70)) : ''}</span>
     </span>
     ${t.alt ? `<button class="t-alt" data-alt="${esc(t.key)}">${esc(t.alt.label)}</button>` : ''}
     <i class="t-dot"></i>

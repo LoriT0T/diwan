@@ -623,3 +623,33 @@ body.framed #sessbar{bottom:0;border-bottom:0;padding-bottom:var(--safe-b)}
   font-size:13px;padding:8px 4px;flex:none;width:82px;
 }
 .td-time::-webkit-calendar-picker-indicator{filter:invert(.6)}
+
+/* ── the day's progress ─────────────────────────────────
+   One bar rather than six counters. It is the only number on the page that is about
+   the day as a whole rather than about one app's opinion of it. */
+.dayprog{
+  position:relative;height:26px;border-radius:8px;overflow:hidden;
+  background:var(--card);border:1px solid var(--line);margin:12px 0 0;
+  display:flex;align-items:center;
+}
+.dayprog i{position:absolute;left:0;top:0;bottom:0;background:var(--card-2);
+  border-right:1px solid var(--line-2);transition:width .3s ease}
+.dayprog span{position:relative;font-size:11px;color:var(--tx-3);padding:0 11px;
+  letter-spacing:.02em}
+
+/* ── time / app switch ──────────────────────────────────
+   A toggle rather than a nesting: the two axes fight, so only one is outer at a time
+   and the other is one tap away. */
+.switch{
+  display:flex;gap:2px;margin:14px 0 0;padding:2px;
+  background:var(--card);border:1px solid var(--line);border-radius:999px;width:max-content;
+}
+.switch button{
+  background:transparent;border:0;border-radius:999px;cursor:pointer;
+  font-family:var(--sans);font-size:12.5px;color:var(--tx-3);padding:6px 15px;
+}
+.switch button.on{background:var(--card-2);color:var(--tx);font-weight:600}
+.switch button:active{opacity:.8}
+
+.sect-h h3.late{color:var(--warn)}
+.t-note b{font-weight:600}
