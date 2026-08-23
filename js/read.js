@@ -698,15 +698,40 @@ async function readAfaq() {
 
   if (!R.started) { R.stat = [{ l: 'Not started', v: '—' }]; return R; }
 
-  let stale = [], up = [], active = [];
+  let stale = [], up = [], active = [], ladders = [];
   try { stale = E.staleQueue() || []; } catch { /* engine wants more than it has */ }
   try { up = S.upcoming() || []; } catch { }
   try { active = S.activePursuits() || []; } catch { }
+  try { ladders = E.craftLadders() || []; } catch { /* older Āfāq, no ladders */ }
+
+  /* A rung that has become claimable is the one moment in a craft worth
+     interrupting for, and it is invisible from outside the app. It is not a task
+     — nothing here can do it for you and there is nothing to tick. The question
+     is "can you actually do this yet", and only you can answer it, which is why
+     this arrives as a proposal and lands you inside the Craft tab rather than
+     offering a checkbox. */
+  const ready = ladders.filter(l => l.next && l.next.eligible);
+  if (ready.length) {
+    /* One, not a list. Three simultaneous "assess yourself" prompts is how a
+       person stops reading them. The furthest-along pursuit goes first, because
+       a rung earned deeper into a craft is the harder-won one. */
+    const l = ready.sort((a, b) => b.done - a.done || b.sessions - a.sessions)[0];
+    /* `reality`, not `due`. The queue drops due-tier proposals on the grounds
+       that an app saying "three things are due" only repeats rows already listed
+       individually — correct in general, and wrong here: there is no row for
+       this, because it is not a task. Nothing above it covers it. */
+    R.proposals.push({
+      tier: 'reality', app: 'afaq', overdue: 1,
+      why: `${l.n} — can you do “${l.next.n}” yet?`,
+      what: `${l.next.is} ${l.sessions} sessions logged, which is enough evidence to be asked. Claim it only if you can actually do it, not because you recognise the description.`,
+      cta: 'Open Craft', href: R.url + '#craft'
+    });
+  }
 
   R.stat = [
     { l: 'Queue',    v: String((S.inQueue() || []).length), tone: stale.length >= 3 ? 'open' : 'plain' },
     { l: 'Rides',    v: String((st.rides || []).length) },
-    { l: 'Pursuits', v: String(active.length) },
+    { l: 'Pursuits', v: String(active.length), tone: ready.length ? 'open' : 'plain' },
     { l: 'Trips',    v: String(up.length) }
   ];
 

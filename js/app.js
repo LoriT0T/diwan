@@ -328,7 +328,11 @@ function row(t) {
     <span class="t-body">
       <span class="t-label">${esc(t.label)}</span>
       <span class="t-note"><b style="color:${HUE(t.app)}">${esc(APP_NAME[t.app] || t.app)}</b>${
-        t.note ? ' · ' + esc(t.note) : ''}${t.cadence ? ' · ' + esc(t.cadence) : ''}${
+        /* A raised proposal carries the app's own name as its note, which was fine
+           when the row did not print one. Now that every row names its app in
+           words, echoing it gives "Āfāq · Āfāq ·". Drop the echo, keep the note. */
+        t.note && t.note !== (APP_NAME[t.app] || t.app) ? ' · ' + esc(t.note) : ''}${
+        t.cadence ? ' · ' + esc(t.cadence) : ''}${
         t.brief && t.isNote ? ' · ' + esc(t.brief.slice(0, 70)) : ''}</span>
     </span>
     ${t.alt ? `<button class="t-alt" data-alt="${esc(t.key)}">${esc(t.alt.label)}</button>` : ''}
