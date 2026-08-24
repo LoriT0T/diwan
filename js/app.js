@@ -103,6 +103,7 @@ async function tick(task, action) {
   task.done = res.done !== false;
   if (act.state) task.state = act.state;
   markWeek(task, task.done);
+  NB.haptic();
   lastUndo = async () => {
     await res.undo();
     task.done = false; task.state = 'none';

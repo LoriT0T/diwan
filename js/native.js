@@ -17,6 +17,11 @@
 const handler = () => window.webkit?.messageHandlers?.diwan;
 export const inApp = () => !!(window.DIWAN_NATIVE && handler());
 
+/** A tick that lands should be felt. No-op outside the shell. */
+export function haptic() {
+  if (inApp()) { try { handler().postMessage({ type: 'haptic' }); } catch { } }
+}
+
 /** Hand the built queue to the lock screen. Called after every build and tick. */
 export function publish(Q) {
   if (!inApp() || !Q) return;
