@@ -112,7 +112,12 @@ export function install(onChange) {
 
       if (msg.type !== 'health') return;
       const date = new Date(Date.now() - new Date().getTimezoneOffset() * 6e4).toISOString().slice(0, 10);
-      try { localStorage.setItem('diwan.health', JSON.stringify({ ...msg, date, at: Date.now() })); } catch {}
+      /* Into the hub's own store, one row per day — synced by the diwan shard,
+         read by the pulse. A stash nobody reads is not data; a history is. */
+      try {
+        const D = await import('./store.js');
+        D.recordHealth(date, msg);
+      } catch { }
 
       const S = await import('../../compound/js/store.js');
       let wrote = false;

@@ -25,7 +25,13 @@ const BLANK = {
      *made*, never that it was played. So this is new information rather than a second
      copy of something, which is the only reason it is allowed to live here. Journalling
      is not in this list: it does leave a trace, and is read from Sakina directly. */
-  practice: {}       // 'YYYY-MM-DD' -> { meditation: ts, affirmations: ts }
+  practice: {},      // 'YYYY-MM-DD' -> { meditation: ts, affirmations: ts }
+  /* The watch's mornings, one row per day. The shell delivers today's summary
+     every time the app wakes; keeping the days is what turns a glanceable
+     card into data that can be WORKED WITH — trends in the pulse, resting HR
+     against training weeks, sleep against everything. Ninety days: enough for
+     a season's pattern, short enough not to become an archive. */
+  health: {}         // 'YYYY-MM-DD' -> { wake, sleepH, rhr, hrv, steps, aerobicMin }
 };
 
 function load() {
@@ -110,6 +116,22 @@ export function togglePractice(date, which) {
    Āfāq; the hub is not exempt from its own rule. */
 export function replace(next) {
   S = Object.assign(structuredClone(BLANK), next || {});
+}
+
+/* ---------- the watch's days ---------- */
+export const healthDays = () => S.health || {};
+export function recordHealth(date, o) {
+  S.health ||= {};
+  /* Merge rather than replace: the morning delivery has sleep, the evening
+     one has the day's steps — both are true and neither should erase the
+     other. Only present, non-null fields land. */
+  const day = (S.health[date] ||= {});
+  for (const k of ['wake', 'sleepH', 'rhr', 'hrv', 'steps', 'aerobicMin']) {
+    if (o[k] != null) day[k] = o[k];
+  }
+  const cutoff = new Date(Date.now() - 90 * 864e5).toISOString().slice(0, 10);
+  for (const d of Object.keys(S.health)) if (d < cutoff) delete S.health[d];
+  save();
 }
 
 export function dropTodo(id) {

@@ -908,6 +908,32 @@ function viewLog() {
       <span class="pl-d ${p.delta > 0 ? 'up' : p.delta < 0 ? 'dn' : ''}">${
         p.delta > 0 ? '+' + p.delta : p.delta || '·'}</span>
     </div>`).join('');
+  /* ── the watch's line in the pulse ──
+     Sleep and resting heart rate, this week against last. These are the two
+     numbers that answer "is the body keeping up with the plan" — and they are
+     only worth showing once there are real days behind them, so the line
+     appears when the watch has actually reported. */
+  const hd = D.healthDays();
+  const wkAvg = (startKey, field) => {
+    const vals = [];
+    for (let d = 0; d < 7; d++) {
+      const v = (hd[R.shift(startKey, d)] || {})[field];
+      if (v != null) vals.push(v);
+    }
+    return vals.length ? vals.reduce((a, b) => a + b, 0) / vals.length : null;
+  };
+  let watchLine = '';
+  const sleepNow = wkAvg(thisMonday, 'sleepH'), sleepPrev = wkAvg(lastMonday, 'sleepH');
+  const rhrNow = wkAvg(thisMonday, 'rhr'), rhrPrev = wkAvg(lastMonday, 'rhr');
+  if (sleepNow != null || rhrNow != null) {
+    const bits = [];
+    if (sleepNow != null) bits.push(`sleep <b>${sleepNow.toFixed(1)}h</b>${
+      sleepPrev != null ? ` (${sleepNow >= sleepPrev ? '+' : ''}${(sleepNow - sleepPrev).toFixed(1)} on last week)` : ''}`);
+    if (rhrNow != null) bits.push(`resting HR <b>${Math.round(rhrNow)}</b>${
+      rhrPrev != null ? ` (${rhrNow <= rhrPrev ? '' : '+'}${Math.round(rhrNow - rhrPrev)})` : ''}`);
+    watchLine = `<p style="color:var(--tx-3)">From the watch: ${bits.join(' · ')}.</p>`;
+  }
+
   const verdicts = [];
   if (climb) verdicts.push(`<b style="color:var(--ok)">${esc(climb.a.name)}</b> is climbing — ${climb.cur.n} entries against ${climb.prev.n} last week.`);
   if (slip) verdicts.push(`<b style="color:var(--warn)">${esc(slip.a.name)}</b> slipped — ${slip.cur.n} against ${slip.prev.n}. One entry today would turn it before the week sets.`);
@@ -918,7 +944,7 @@ function viewLog() {
       <div class="sect-h"><h3>The weekly pulse</h3><span class="aside">this week vs last</span></div>
       <div class="card pad">
         <div class="pl">${pulseRows}</div>
-        <div class="pl-verdict">${verdicts.map(v => `<p>${v}</p>`).join('')}</div>
+        <div class="pl-verdict">${verdicts.map(v => `<p>${v}</p>`).join('')}${watchLine}</div>
       </div>
     </div>`;
 

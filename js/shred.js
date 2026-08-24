@@ -349,6 +349,7 @@ const diwan = {
     const o = {};
     list(s.todos, 'todo', o);
     two(s.practice, 'prac', o);
+    one(s.health, 'health', o);
     if (s.gc) o.gc = s.gc;
     if (s.lastBackup) o.lastBackup = s.lastBackup;
     return o;
@@ -358,6 +359,7 @@ const diwan = {
     const s = raw(diwanKey) || { v: 1 };
     s.todos = unList(r, 'todo');
     s.practice = unTwo(r, 'prac');
+    s.health = unOne(r, 'health');
     s.gc = 'gc' in r ? r.gc : null;
     s.lastBackup = 'lastBackup' in r ? r.lastBackup : null;
     s.v = 1;
