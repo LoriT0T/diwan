@@ -242,13 +242,6 @@ async function readJamal(covered) {
   }
   R.last = Object.keys(R.days).sort().pop() || null;
 
-  /* Whether anything was written today, read from Sakina's own entries — the one part
-     of the evening practice that leaves a trace there, so it needs no record of ours.
-     Set before the early return below: "have I journalled today" has the same honest
-     answer whether or not Sakina has ever been opened, and the row that asks it is
-     due either way. */
-  R.journalToday = journal.some(j => iso(new Date(j.at)) === t);
-
   if (!R.started) { R.stat = [{ l: 'Not started', v: '—' }]; return R; }
 
   const dueRituals = J.RITUALS.filter(r => { const n = jamalDueIn(r, st, t); return n !== null && n <= 0; });

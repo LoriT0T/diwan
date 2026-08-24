@@ -745,3 +745,10 @@ html.native #menu{display:none}
 html.native .masthead{padding-top:16px}
 html.native body{padding-bottom:12px}
 html.native .wrap{padding-bottom:20px}
+
+/* Inside the shell, a mounted app's frame bar sheds what the shell makes
+   redundant: the drawer button (the native tab bar navigates) and "open in
+   its own tab" (there are no tabs to open into — WKWebView ignores _blank,
+   so the button would simply be dead, which is worse than absent). */
+html.native .fb-menu{display:none}
+html.native .fb-out{display:none}

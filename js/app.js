@@ -1343,7 +1343,7 @@ function wireRemind() {
         if (got !== 'granted') { el.checked = false; toast('Notifications were not allowed.', { bad: true }); paint(); return; }
       }
       N.save({ [key]: key === 'eveningSweep' ? (el.checked ? 21 : null) : el.checked });
-      if (N.settings().on) N.start(() => Q);
+      if (N.settings().on && !window.DIWAN_NATIVE) N.start(() => Q);
       toast('Saved.');
     };
   };
@@ -1597,6 +1597,12 @@ async function wirePush() {
 
 /** Replace the stored agenda with the current day's. Cheap, so it runs on every read. */
 async function syncAgenda() {
+  /* Inside the app, notifications have exactly one source: the shell, which
+     schedules the queue's own times as OS notifications. The page uploading a
+     web-push agenda on top of that is how the same prayer arrives twice —
+     once from the server, once from the phone — and a doubled reminder is
+     worse than none, because the second one teaches you to dismiss both. */
+  if (window.DIWAN_NATIVE) return;
   if (!C.signedIn() || !Q) return;
   if (!(await P.subscribed().catch(() => false))) return;
   try { await P.pushAgenda(P.buildAgenda(Q, N.settings())); }
@@ -1681,7 +1687,7 @@ app.innerHTML = `<header class="masthead"><p class="eyebrow">Reading the apps…
 /* Sync as soon as the page is usable, not before — the queue should paint from what is
    already here rather than waiting on the network, and then quietly correct itself. */
 refresh().then(() => {
-  if (N.settings().on) N.start(() => Q);
+  if (N.settings().on && !window.DIWAN_NATIVE) N.start(() => Q);
   if (C.signedIn()) runSync();
   setInterval(() => { if (C.signedIn() && document.visibilityState === 'visible' && !syncing) runSync(); }, 5 * 60_000);
 }).catch(e => {
