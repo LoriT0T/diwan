@@ -270,10 +270,22 @@ const getAll = (db, s) => new Promise(res => {
   } catch { res([]); }
 });
 
+/* Two localStorage keys ride along with the IndexedDB stores: the Gemini key
+   the meditation generator runs on, and the prayer coordinates. Both are
+   settings a person enters ONCE and expects everywhere — the key especially,
+   because without it "Make a meditation" dead-ends on every new device with a
+   paste screen for a value that already exists three devices away. They are
+   records like anything else: private table, RLS, never in a repo. */
+const SAK_LS = { apikey: 'sakina.apikey', place: 'sakina.place' };
+
 const sakina = {
   async shred() {
-    const db = await sakDb(); if (!db) return {};
     const o = {};
+    for (const [name, k] of Object.entries(SAK_LS)) {
+      const v = localStorage.getItem(k);
+      if (v) o[`ls/${name}`] = v;
+    }
+    const db = await sakDb(); if (!db) return o;
     try {
       for (const s of SAK_STORES)
         for (const row of await getAll(db, s)) {
@@ -285,6 +297,14 @@ const sakina = {
   },
   async apply(r) {
     if (empty(r)) return {};
+    /* The settings land whether or not the database exists — a fresh device
+       should have the key BEFORE Sakina is first opened, so the generator
+       works on its very first run. A value already set locally is kept: a
+       deliberate local change beats a synced one for a setting. */
+    for (const [name, k] of Object.entries(SAK_LS)) {
+      const v = r[`ls/${name}`];
+      if (typeof v === 'string' && v && !localStorage.getItem(k)) localStorage.setItem(k, v);
+    }
     const db = await sakDb();
     /* No database means Sakina has never run here. Creating one would be the exact
        hazard this codebase avoids everywhere else — a hub-made v1 with no object
