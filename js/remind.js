@@ -216,7 +216,7 @@ export function locate() {
         let place = {};
         try { place = JSON.parse(localStorage.getItem('sakina.place') || '{}'); } catch { /* fresh */ }
         const next = {
-          method: 'MoonsightingCommittee', madhab: 'hanafi',   // sensible defaults, kept if already set
+          method: 'Kuwait', madhab: 'shafi',   // Kuwait's own method; kept only if nothing is set
           ...place,
           latitude: +p.coords.latitude.toFixed(4),
           longitude: +p.coords.longitude.toFixed(4),

@@ -43,6 +43,18 @@ async function compoundToggle({ date, id }) {
   };
 }
 
+/* "Not for me" — Compound's own per-item off switch. H.live() honours it
+   everywhere, so the item leaves the queue, the domain counts and the review
+   in one write. Reversible in Compound's fortnightly review, and the undo
+   here flips it straight back. */
+async function compoundOff({ id }) {
+  const S = await import('../../compound/js/store.js');
+  /* setHOff returns nothing, so the write is verified by reading it back. */
+  S.setHOff(id, true);
+  if (!S.getHOff()[id]) return { ok: false, error: 'Compound would not save — storage is full or blocked.' };
+  return { ok: true, done: true, undo: () => S.setHOff(id, false) };
+}
+
 /* Workout fuel — Compound's own setFuel, same shape its Today page writes. */
 async function compoundFuel({ date, id }) {
   const S = await import('../../compound/js/store.js');
@@ -302,6 +314,7 @@ async function diwanPractice({ date, which }) {
 const HANDLERS = {
   'compound.h':    compoundToggle,
   'compound.fuel': compoundFuel,
+  'compound.off':  compoundOff,
   'jamal.ritual':  jamalToggle,
   'jamal.inside':  jamalInside,
   'jamal.cab':     jamalCab,

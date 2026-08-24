@@ -53,9 +53,13 @@ const at = (h, date = new Date()) => {
 };
 
 /* ── prayer times, from Sakina's own coordinates ──────────────────── */
+/* Kuwait, by request (2026-08-25) — and with Kuwait's own calculation method,
+   which adhan ships: the times must match what the mosques around him keep,
+   not a committee's curve fitted to a different latitude. A place set by hand
+   or by the locate button still wins; this is only what an unset device gets. */
 const DEFAULT_PLACE = {
-  latitude: 52.9225, longitude: -1.4746, label: 'Derby, UK',
-  method: 'MoonsightingCommittee', madhab: 'hanafi'
+  latitude: 29.3759, longitude: 47.9774, label: 'Kuwait City',
+  method: 'Kuwait', madhab: 'shafi'
 };
 export function place() {
   try {
@@ -267,8 +271,32 @@ export async function buildQueue(snap) {
         return h + m / 60;
       })();
 
+      /* ── which supplements can even be taken ──
+         The buy list already knows what is not in the cabinet. A daily task
+         for a capsule that was never bought is a nag about a shopping failure
+         dressed up as a habit failure — so an unbought supplement's row folds
+         into one quiet line pointing at the Buy list, and comes back as a real
+         task the day it is marked bought. Zero clicks: the system reads its
+         own shopping state. */
+      const NEEDS_BUYING = { multi: 'b-multi', d3: 'b-d3', omega: 'b-omega',
+                             mag: 'b-mag', brazil: 'b-brazil' };
+
       for (const i of H.live()) {
         if (i.dom === 'situ') continue;              // considered, not daily — see the header
+        const buyId = NEEDS_BUYING[i.id];
+        if (buyId && S.buyState && S.buyState(buyId) !== 'bought') {
+          out.push({
+            key: 'compound:' + i.id, app: 'compound', label: i.name, ico: i.ico,
+            note: 'Not in the cabinet', domain: i.dom,
+            brief: (S.buyState(buyId) === 'basket'
+              ? 'In the basket — this becomes a daily task the day it arrives.'
+              : 'Not bought yet. It is waiting on the Buy list.'),
+            at: null, slot: 'any', done: false, tier: 'due', isNote: true,
+            words: [], action: null,
+            href: comp.url + '#/buy', cta: 'Open the Buy list'
+          });
+          continue;
+        }
         const done = H.satisfied(date, i);
         const daily = i.cad.t === 'd';
         let when = null;
@@ -303,6 +331,14 @@ export async function buildQueue(snap) {
           ...(i.id === 'caff' && when ? { notifyAt: new Date(when.getTime() - 15 * 60_000) } : {}),
           words: w(i.id, [i.name.toLowerCase()]),
           action: { kind: 'compound.h', date, id: i.id },
+          /* The other honest out: "I am not convinced" — liver was his example.
+             Compound already has an off switch per item (hoff, honoured by
+             H.live() everywhere); this surfaces it where the doubt actually
+             strikes. Ticking is one option, not the only one. Levers and tests
+             carry no such button: doubting a wake time is not a thing. */
+          ...(i.dom === 'fuel'
+            ? { alt: { label: 'Not for me', action: { kind: 'compound.off', id: i.id } } }
+            : {}),
           /* Lands on the exact row, expanded — not on the top of the page. */
           href: comp.url + '#/?hx=' + i.id
         });
@@ -723,18 +759,48 @@ export async function buildQueue(snap) {
     }
     const gcWk = type => wkDays(date, d => (evDays[type] || { has: () => false }).has(d));
 
+    /* ── the morning block ──
+       His words: it wakes the mind up. So the voice work stops floating in
+       "any time" and takes the morning, hung off the wake Compound actually
+       logged — warm-up first (the instrument), then the call (the practice),
+       then the words (the range). Field log and reps stay untimed: they happen
+       where life happens. */
+    const gcWake = (() => {
+      try {
+        const raw = JSON.parse(localStorage.getItem('pp:v1:hlog') || '{}');
+        const t2 = raw?.[date]?.wake?.v?.t;
+        if (!t2 || !/^\d{1,2}:\d{2}$/.test(t2)) return null;
+        const [h2, m2] = t2.split(':').map(Number);
+        return h2 + m2 / 60;
+      } catch { return null; }
+    })();
+    const gcBase = gcWake != null ? Math.min(gcWake, 9) : 7.5;
+
     out.push({
       key: 'gc:warmup', app: 'gc', label: 'Warm up', note: 'Voice', ico: '👄', wk: gcWk('drill'),
       domain: 'warmup', brief: 'Articulators, consonants, twisters — it is a timed drill',
-      at: null, slot: 'any', done: drillToday, tier: 'due', left: 0, daily: true,
+      at: at(gcBase + 0.6), done: drillToday, tier: 'due', left: 0, daily: true,
       words: ['warm up', 'warmup', 'twisters', 'articulation', 'drills'],
       action: null, href: gc.url + '#warmup', cta: 'Run the drill'
     });
+    /* The call itself — the practice the other nine modules orbit. Never a
+       task before, which meant the one trained skill with a live partner had
+       no place in the day. */
+    const callToday = ((raw && raw.calls) || []).some(c => c.at >= dayStart.getTime());
+    out.push({
+      key: 'gc:call', app: 'gc', label: 'Call a friend', note: 'Practice call', ico: '🎙️',
+      wk: wkDays(date, d => ((raw && raw.calls) || []).some(c => iso(new Date(c.at)) === d)),
+      domain: 'call', brief: 'Five minutes with Sterling. Scored as you talk; the recap lands after.',
+      at: at(gcBase + 0.85), done: callToday, tier: 'due', left: 0, daily: true,
+      words: ['called', 'call', 'sterling', 'vale', 'rascal'],
+      action: null, href: gc.url + '#call', cta: 'Place the call'
+    });
+
     out.push({
       key: 'gc:words', app: 'gc', label: `Words — ${vocabToday}/${wantWords}`, note: 'Vocabulary',
       ico: '📚', wk: gcWk('vocab'),
       domain: 'words', brief: 'Recall counts only on distinct days, so it has to be done there',
-      at: null, slot: 'any', done: vocabToday >= wantWords, tier: 'due', left: 0, daily: true,
+      at: at(gcBase + 1.1), done: vocabToday >= wantWords, tier: 'due', left: 0, daily: true,
       words: ['words', 'vocab', 'vocabulary'],
       action: null, href: gc.url + '#vocab', cta: 'Open Words'
     });
