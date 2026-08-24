@@ -806,7 +806,7 @@ export async function buildQueue(snap) {
     });
     out.push({
       key: 'gc:rep', app: 'gc', label: 'A rep', note: 'Reps', ico: '💬', wk: gcWk('rep'),
-      domain: 'rep', brief: repsToday ? `${repsToday} logged today` : 'One conversation you started. Volume is the input you control.',
+      domain: 'rep', brief: repsToday ? `${repsToday} logged today` : 'One X+1: do the situation’s required minimum, then one small step past the script. Tiny on purpose.',
       at: null, slot: 'any', done: repsToday > 0, tier: 'due', left: 0, daily: true,
       words: ['rep', 'conversation', 'talked to', 'spoke to'],
       action: raw ? { kind: 'gc.rep' } : null, href: gc.url + '#hub',
@@ -821,7 +821,7 @@ export async function buildQueue(snap) {
     out.push({
       key: 'gc:field', app: 'gc', label: 'Field entry', note: 'Field log', ico: '📓',
       wk: gcWk('field'),
-      domain: 'field', brief: 'One real interaction: predict, act, rate. Without this the system is a closed loop.',
+      domain: 'field', brief: 'One real interaction: predict, run an X+1, rate. Without this the system is a closed loop.',
       at: null, slot: 'any', done: (evDays.field || { has: () => false }).has(date),
       tier: 'due', left: 0, daily: true,
       words: ['field', 'interaction'],
