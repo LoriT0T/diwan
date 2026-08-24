@@ -33,6 +33,30 @@
   </div>
 </nav>
 
+<script>
+/* The last resort: a page that dies before first paint must SAY SO. A blank
+   register with working navigation looks like a broken app and reads like
+   nothing; the actual error on screen is a bug report that writes itself. */
+window.addEventListener('error', e => {
+  const app = document.getElementById('app');
+  if (app && !app.childElementCount) {
+    const d = document.createElement('div');
+    d.style.cssText = 'padding:40px 20px;font:13px/1.6 monospace;color:#e08a7a;word-break:break-all';
+    d.textContent = 'Boot failed: ' + (e.message || e.type) + ' @ ' +
+      String(e.filename || '').split('/').pop() + ':' + (e.lineno || '?');
+    app.appendChild(d);
+  }
+});
+window.addEventListener('unhandledrejection', e => {
+  const app = document.getElementById('app');
+  if (app && !app.childElementCount) {
+    const d = document.createElement('div');
+    d.style.cssText = 'padding:40px 20px;font:13px/1.6 monospace;color:#e08a7a;word-break:break-all';
+    d.textContent = 'Boot failed (async): ' + String(e.reason && e.reason.stack || e.reason).slice(0, 400);
+    app.appendChild(d);
+  }
+});
+</script>
 <script type="module" src="js/app.js"></script>
 </body>
 </html>
