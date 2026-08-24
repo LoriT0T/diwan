@@ -766,6 +766,15 @@ function viewFrame(id, tail) {
   const a = SNAP.apps.find(x => x.id === id);
   if (!a) { location.hash = '#/apps'; return; }
   const src = relPath(a) + (tail ? decodeURIComponent(tail) : '');
+
+  /* Inside the iOS shell there is no iframe. iOS WebKit will not scroll an
+     iframe's content — the mounted app freezes at its first screenful, which
+     on a phone means "the app has one page and no nav". So the shell gets the
+     real thing: a full navigation to the app itself, every page of its own UI,
+     scrolling natively. The way back is the shell's — edge-swipe, or any tab.
+     The iframe mount below remains exactly right for browsers, where it is
+     the whole trick. */
+  if (window.DIWAN_NATIVE) { location.href = src; return; }
   const allow = FRAME_ALLOW[id] || '';
 
   document.body.classList.add('framed');
