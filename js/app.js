@@ -1684,7 +1684,7 @@ async function refresh() {
     try { Q.moments = await MO.build(R.iso()); } catch { Q.moments = []; }
   }
   /* The day's shape on the app icon, glanceable with nothing open. */
-  N.badge(Q.all.filter(t => !t.done && !t.isNote).length);
+  N.badge(Q.all.filter(t => !t.done && !t.isNote && !t.skipped).length);
   paint();
   window.__DIWAN_Q = Q;
   NB.publish(Q);
@@ -1729,6 +1729,14 @@ document.addEventListener('visibilitychange', () => {
     lastRead = Date.now(); refresh();
   }
 });
+/* A tab left VISIBLE across midnight never fires visibilitychange, and a
+   register describing yesterday is the one thing this page must never be.
+   One check a minute; a rebuild only when the date actually turns. */
+let shownDate = R.iso();
+setInterval(() => {
+  const d = R.iso();
+  if (d !== shownDate) { shownDate = d; refresh(); }
+}, 60_000);
 
 app.innerHTML = `<header class="masthead"><p class="eyebrow">Reading the apps…</p>
   <h1>Dīwān</h1><p class="sub">Opening Compound, Jamāl, Anbīq, Sakina, Charisma Gym and Āfāq where they sit.</p></header>`;

@@ -307,6 +307,10 @@ async function diwanTodo({ id }) {
 async function diwanSkip({ date, key }) {
   const D = await import('./store.js');
   const now = D.toggleSkip(date, key);
+  /* Verified by read-back — a skip that did not persist must not render as one. */
+  if (!!(D.skippedOn(date) || {})[key] !== now) {
+    return { ok: false, error: 'Could not save — storage is full or blocked.' };
+  }
   return { ok: true, done: now, undo: () => D.toggleSkip(date, key) };
 }
 
@@ -314,6 +318,9 @@ async function diwanSkip({ date, key }) {
 async function diwanPractice({ date, which }) {
   const D = await import('./store.js');
   const now = D.togglePractice(date, which);
+  if (!!(D.practiceOn(date) || {})[which] !== now) {
+    return { ok: false, error: 'Could not save — storage is full or blocked.' };
+  }
   return { ok: true, done: now, undo: () => D.togglePractice(date, which) };
 }
 
