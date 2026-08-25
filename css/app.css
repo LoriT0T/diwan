@@ -752,3 +752,8 @@ html.native .wrap{padding-bottom:20px}
    so the button would simply be dead, which is worse than absent). */
 html.native .fb-menu{display:none}
 html.native .fb-out{display:none}
+
+/* Set aside today: visibly parked, not vanished. */
+.trow.is-skipped{opacity:.55}
+.trow.is-skipped .t-label{text-decoration:line-through;text-decoration-color:var(--tx-3)}
+.sect-h h3.skip{color:var(--warn)}

@@ -331,14 +331,12 @@ export async function buildQueue(snap) {
           ...(i.id === 'caff' && when ? { notifyAt: new Date(when.getTime() - 15 * 60_000) } : {}),
           words: w(i.id, [i.name.toLowerCase()]),
           action: { kind: 'compound.h', date, id: i.id },
-          /* The other honest out: "I am not convinced" — liver was his example.
-             Compound already has an off switch per item (hoff, honoured by
-             H.live() everywhere); this surfaces it where the doubt actually
-             strikes. Ticking is one option, not the only one. Levers and tests
-             carry no such button: doubting a wake time is not a thing. */
-          ...(i.dom === 'fuel'
-            ? { alt: { label: 'Not for me', action: { kind: 'compound.off', id: i.id } } }
-            : {}),
+          /* The one-tap "Not for me" that used to sit here was a bail-out: a
+             permanent exemption at the exact moment of least conviction. He
+             asked for the opposite — tasks that hold their ground. Permanent
+             opt-out now lives only inside Compound's own review page, where
+             it is a considered decision; here, the only out is a SKIP that
+             expires at midnight. */
           /* Lands on the exact row, expanded — not on the top of the page. */
           href: comp.url + '#/?hx=' + i.id
         });
@@ -986,6 +984,18 @@ export async function buildQueue(snap) {
         words: [], action: null, href: p.href, cta: p.cta, isNote: true
       });
     }
+  }
+
+  /* ── the day's deliberate set-asides ──
+     Applied at the end so every task from every app gets the same treatment.
+     A skip is per-day: it dims the row and stops the chasing, and tomorrow
+     the task stands again at full strength. Tasks that are not tickable get
+     no skip either — there is nothing to set aside about a link. */
+  const skips = D.skippedOn(date);
+  for (const t of out) {
+    if (t.done || !t.action || t.isNote) continue;
+    if (skips[t.key]) t.skipped = true;
+    t.alt = t.alt || { label: 'Skip', action: { kind: 'diwan.skip', date, key: t.key } };
   }
 
   return order(out);

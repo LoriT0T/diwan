@@ -28,7 +28,7 @@ export function publish(Q) {
   try {
     const items = Q.all.concat(Q.done || []).map(t => ({
       key: t.key, label: t.label, ico: t.ico || '◈', app: t.app,
-      at: t.at ? t.at.toISOString() : null, done: !!t.done,
+      at: t.at ? t.at.toISOString() : null, done: !!t.done || !!t.skipped,
       /* `tickable` decides whether the lock screen offers a Done button at all.
          A journal, a protein count, a field entry — things a checkbox would
          fake — carry false and get no button. Full control never means fake
@@ -39,6 +39,7 @@ export function publish(Q) {
     }));
     handler().postMessage({
       type: 'queue',
+      moments: Q.moments || [],
       date: new Date(Date.now() - new Date().getTimezoneOffset() * 6e4).toISOString().slice(0, 10),
       items,
       done: (Q.done || []).length + Q.all.filter(t => t.done).length,

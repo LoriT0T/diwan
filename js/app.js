@@ -17,6 +17,7 @@ import * as P from './push.js';
 import { buildQueue, BUNDLES, PRAYER_LABEL, place, prayerTimes, leftLabel } from './tasks.js';
 import { TIER_LABEL } from './rank.js';
 import * as NB from './native.js';
+import * as MO from './moments.js';
 
 const $ = (s, r = document) => r.querySelector(s);
 const app = $('#app');
@@ -171,9 +172,10 @@ function renderQueue() {
   NB.publish(Q);
   const box = $('#queue'); if (!box) return;
   const sub = $('#q-sub');
-  const open = Q.all.filter(t => !t.done);
+  const open = Q.all.filter(t => !t.done && !t.skipped);
   const done = Q.all.filter(t => t.done).concat(Q.done);
-  const total = open.length + done.length;
+  const nSkipped = Q.all.filter(t => t.skipped && !t.done).length;
+  const total = open.length + done.length + nSkipped;
 
   if (sub) sub.textContent = open.length
     ? `${open.length} left today, in the order the day happens. Tick from the top.`
@@ -193,7 +195,7 @@ function renderQueue() {
 
   box.innerHTML =
     headCard(head) +
-    progressBar(done.length, total) +
+    progressBar(done.length, total, nSkipped) +
     switcher(mode) +
     (mode === 'app' ? byApp(rest) : byTime(rest)) +
     doneBlock(done);
@@ -204,12 +206,12 @@ function renderQueue() {
 }
 
 /** How much of the day is behind you. One bar beats six counters. */
-function progressBar(doneN, total) {
+function progressBar(doneN, total, skippedN = 0) {
   if (!total) return '';
   const pct = Math.round((doneN / total) * 100);
   return `<div class="dayprog" title="${doneN} of ${total} done">
     <i style="width:${pct}%"></i>
-    <span>${doneN} of ${total} done today</span>
+    <span>${doneN} of ${total} done today${skippedN ? ` · ${skippedN} set aside` : ''}</span>
   </div>`;
 }
 
@@ -224,6 +226,11 @@ function switcher(mode) {
 function byTime(rest) {
   const now = Date.now();
   const soon = now + 3 * 3600e3;
+
+  /* Set-asides leave the flow but stay in sight — a skip that hides the task
+     entirely would just be deletion in a nicer coat. */
+  const skipped = rest.filter(t => t.skipped);
+  rest = rest.filter(t => !t.skipped);
 
   const overdue = rest.filter(t => t.at && t.at.getTime() <= now);
   const next    = rest.filter(t => t.at && t.at.getTime() > now && t.at.getTime() <= soon);
@@ -243,6 +250,7 @@ function byTime(rest) {
        + band('Running out this week', week.sort((a, b) =>
            ((a.left ?? 99) - (b.left ?? 99)) || (a.over === b.over ? 0 : a.over ? -1 : 1)))
        + band('No deadline', someday)
+       + band('Set aside today', skipped, 'skip')
        + band('Needs the app', notes);
 }
 
@@ -366,7 +374,7 @@ function row(t) {
   /* The body is a LINK. Every row lands on its own place in its own app — the row in
      Compound expanded, the ritual's runner open, the exact Sakina page — because the
      whole point of the register is that finding the task is never a second task. */
-  return `<div class="trow${t.isNote ? ' note-row' : ''}" style="--hue:${HUE(t.app)}" data-key="${esc(t.key)}">
+  return `<div class="trow${t.isNote ? ' note-row' : ''}${t.skipped ? ' is-skipped' : ''}" style="--hue:${HUE(t.app)}" data-key="${esc(t.key)}">
     ${t.startSession
       ? `<button class="tick play" data-start="${esc(t.startSession)}" aria-label="Start ${esc(t.label)}">▶</button>`
       : t.action
@@ -385,7 +393,7 @@ function row(t) {
     </a>
     ${wkBoxes(t)}
     ${endsChip(t)}
-    ${t.alt ? `<button class="t-alt" data-alt="${esc(t.key)}">${esc(t.alt.label)}</button>` : ''}
+    ${t.alt ? `<button class="t-alt" data-alt="${esc(t.key)}">${esc(t.skipped ? 'Unskip' : t.alt.label)}</button>` : ''}
     <i class="t-dot"></i>
   </div>`;
 }
@@ -1670,6 +1678,11 @@ function paint() {
 async function refresh() {
   SNAP = await R.readAll();
   Q = await buildQueue(SNAP);
+  /* The day's moments ride the same publish as the queue. Deterministic by
+     date, so a reopened app never reshuffles what today already promised. */
+  if (window.DIWAN_NATIVE) {
+    try { Q.moments = await MO.build(R.iso()); } catch { Q.moments = []; }
+  }
   /* The day's shape on the app icon, glanceable with nothing open. */
   N.badge(Q.all.filter(t => !t.done && !t.isNote).length);
   paint();

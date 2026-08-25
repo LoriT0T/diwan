@@ -31,7 +31,8 @@ const BLANK = {
      card into data that can be WORKED WITH — trends in the pulse, resting HR
      against training weeks, sleep against everything. Ninety days: enough for
      a season's pattern, short enough not to become an archive. */
-  health: {}         // 'YYYY-MM-DD' -> { wake, sleepH, rhr, hrv, steps, aerobicMin }
+  health: {},        // 'YYYY-MM-DD' -> { wake, sleepH, rhr, hrv, steps, aerobicMin }
+  skips: {}          // 'YYYY-MM-DD' -> { taskKey: ts } — set aside today, on purpose
 };
 
 function load() {
@@ -116,6 +117,23 @@ export function togglePractice(date, which) {
    Āfāq; the hub is not exempt from its own rule. */
 export function replace(next) {
   S = Object.assign(structuredClone(BLANK), next || {});
+}
+
+/* ---------- deliberately set aside ----------
+   A skip is neither a tick nor a forgetting: "not today, on purpose". Kept
+   per day so tomorrow the task stands again at full strength — a skip never
+   compounds into an exemption, which is the difference between this and the
+   bail-out button it replaces. */
+export const skippedOn = date => (S.skips || {})[date] || {};
+export function toggleSkip(date, key) {
+  S.skips ||= {};
+  const day = (S.skips[date] ||= {});
+  if (day[key]) delete day[key]; else day[key] = Date.now();
+  if (!Object.keys(day).length) delete S.skips[date];
+  const cutoff = new Date(Date.now() - 62 * 864e5).toISOString().slice(0, 10);
+  for (const d of Object.keys(S.skips)) if (d < cutoff) delete S.skips[d];
+  save();
+  return !!(S.skips[date] || {})[key];
 }
 
 /* ---------- the watch's days ---------- */

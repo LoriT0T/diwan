@@ -303,6 +303,13 @@ async function diwanTodo({ id }) {
   return { ok: true, done: t.done, undo: () => D.toggleTodo(id) };
 }
 
+/* ── set aside for today ── */
+async function diwanSkip({ date, key }) {
+  const D = await import('./store.js');
+  const now = D.toggleSkip(date, key);
+  return { ok: true, done: now, undo: () => D.toggleSkip(date, key) };
+}
+
 /* ── the listening practice ── */
 async function diwanPractice({ date, which }) {
   const D = await import('./store.js');
@@ -323,7 +330,8 @@ const HANDLERS = {
   'gc.rep':        gcRep,
   'afaq.item':     afaqItem,
   'diwan.todo':    diwanTodo,
-  'diwan.practice': diwanPractice
+  'diwan.practice': diwanPractice,
+  'diwan.skip':    diwanSkip
 };
 
 /**
