@@ -35,7 +35,11 @@ export function publish(Q) {
          logging. `hash` is the row's own deep link, so tapping a notification
          lands inside the task's app, not on a front page. */
       tickable: !!t.action,
-      hash: t.href ? String(t.href) : null
+      hash: t.href ? String(t.href) : null,
+      /* The notification body. It used to be the bare app name, so a stack of
+         reminders read as a wall of "Compound" — the sender looked like the
+         wrong app and the content said nothing. The brief is the push. */
+      brief: (t.brief || '').slice(0, 140)
     }));
     handler().postMessage({
       type: 'queue',

@@ -25,8 +25,21 @@ const ADHKAR = [
   { a: 'رَبِّ اشْرَحْ لِي صَدْرِي وَيَسِّرْ لِي أَمْرِي', t: 'My Lord, expand my chest for me and ease my task for me.', src: 'Qur’an 20:25–26' },
 ];
 
-/* The day's slots, local hours. Spread across the gaps the task list leaves. */
-const SLOTS = [10.5, 12.75, 15.0, 16.75, 19.0, 21.75];
+/* ── the day's slots, mapped to HIS routine, not to a clock ──
+   He described the day himself: morning practice block, breakfast, gym at
+   five, hobby off the back of the gym trip, the reclaimed reading hour at
+   eight, journal, affirmations, sleep. Each slot below is a mood in that
+   arc, and the kind of push each mood can actually receive:
+
+     07:05  rising        — dhikr; the day opens on remembrance
+     08:55  post-practice — an identity line; who today is being done as
+     11:10  mid-morning   — a claim from the lab; the mind is sharpest
+     13:40  after Dhuhr   — a word upgrade; light, playful
+     16:20  pre-gym       — a training truth; fuel for the hour ahead
+     18:40  post-gym      — the hobby push; he is out, dressed, moving
+     20:05  reading hour  — something to watch after, or his own track line
+     21:40  winding down  — somewhere to go; let the horizon in before sleep */
+const SLOTS = [7.08, 8.92, 11.17, 13.67, 16.33, 18.67, 20.08, 21.67];
 
 async function affirmationLine(seed) {
   /* His own track, speaking during the day. Newest affirmation track's script
@@ -58,13 +71,26 @@ export async function build(date) {
   const out = [];
   const kinds = [];
 
-  // dhikr — always present, always first of the day
+  // 07:05 — rising: dhikr
   kinds.push(seed => {
     const d = pick(ADHKAR, seed);
     return { title: d.a, body: `${d.t} — ${d.src}`, url: APPS_URL + 'sakina/prayer/' };
   });
 
-  // a claim from the lab
+  // 08:55 — post-practice: an identity line, the day's X+1 stance
+  kinds.push(seed => {
+    const LINES = [
+      'Today runs on X+1: find the script, take one small step past it. The lift, the till, the corridor.',
+      'You are someone who asks the second question. One person today gets the real follow-up.',
+      'Warmth first today — one stranger leaves lighter because they crossed you.',
+      'Make the joke today. The one you usually hold. It was funny; holding it was the only mistake.',
+      'Full attention is the rarest gift on earth. Give it once today, completely.',
+    ];
+    const l = pick(LINES, seed);
+    return { title: 'Who today is being done as', body: l, url: APPS_URL + 'charisma-gym/#identity' };
+  });
+
+  // 11:10 — mid-morning: a claim from the lab, while the mind is sharpest
   kinds.push(seed => {
     try {
       const st = JSON.parse(localStorage.getItem('anbiq.v1') || 'null');
@@ -74,7 +100,7 @@ export async function build(date) {
     } catch { return null; }
   });
 
-  // a word upgrade from the gym (classic script: it hangs its content on window)
+  // 13:40 — after Dhuhr: a word upgrade, light and playful
   kinds.push(async seed => {
     try {
       if (!window.VOICE_CONTENT) await import('../../charisma-gym/content-voice.js');
@@ -82,13 +108,13 @@ export async function build(date) {
       const p = pick(pairs, seed);
       if (!p) return null;
       const strong = pick(p.strong, seed + ':s');
-      return { title: `Retire “${p.weak}”`,
-               body: `Reach for “${strong}” today. Vivid beats accurate for wit.`,
+      return { title: `Retire \u201c${p.weak}\u201d`,
+               body: `Reach for \u201c${strong}\u201d today. Vivid beats accurate for wit.`,
                url: APPS_URL + 'charisma-gym/#vocab' };
     } catch { return null; }
   });
 
-  // a training truth from Compound — the why or the trap, which is the useful half
+  // 16:20 — pre-gym: a training truth as fuel, not trivia
   kinds.push(async seed => {
     try {
       const H = await import('../../compound/js/health.js');
@@ -96,30 +122,41 @@ export async function build(date) {
       const i = pick(items, seed);
       if (!i) return null;
       const text = (i.trap || i.why).replace(/<[^>]+>/g, '');
-      return { title: `${i.ico || ''} ${i.name}`.trim(), body: text.slice(0, 170), url: APPS_URL + 'compound/#/?hx=' + i.id };
+      return { title: `${i.ico || ''} ${i.name}`.trim(), body: text.slice(0, 170),
+               url: APPS_URL + 'compound/#/?hx=' + i.id };
     } catch { return null; }
   });
 
-  // something to watch AND somewhere to go — both, every day. His words:
-  // multiple recommendations of everything a day, and Āfāq is where the
-  // dissatisfaction lives, so it gets two voices where the others get one.
+  // 18:40 — post-gym: the hobby, while he is already out and moving
+  kinds.push(seed => {
+    const PUSHES = [
+      'You are already out and dressed. Twenty minutes on the bike before home counts as a session.',
+      'The gym is done — the hardest part of the hobby was leaving the house, and you already left.',
+      'One drill on the way home. The ladder moves on evidence, not intention.',
+    ];
+    return { title: '✦ The hobby rides the gym trip', body: pick(PUSHES, seed),
+             url: APPS_URL + 'afaq/#craft' };
+  });
+
+  // 20:05 — the reading hour: his own track line if one exists, else the screen
   kinds.push(async seed => {
+    const own = await affirmationLine(seed);
+    if (own) return own;
     try {
       const D = await import('../../afaq/js/data.js');
       const t = pick(D.CATALOGUE.filter(x => x.why), seed);
-      return t ? { title: `🎬 ${t.t}`, body: t.why.slice(0, 170), url: APPS_URL + 'afaq/#screen' } : null;
+      return t ? { title: `\ud83c\udfac ${t.t}`, body: t.why.slice(0, 170), url: APPS_URL + 'afaq/#screen' } : null;
     } catch { return null; }
   });
+
+  // 21:40 — winding down: let the horizon in
   kinds.push(async seed => {
     try {
       const D = await import('../../afaq/js/data.js');
       const d = pick(D.DESTS.filter(x => x.why), seed);
-      return d ? { title: `🧭 ${d.n}`, body: d.why.slice(0, 170), url: APPS_URL + 'afaq/#travel' } : null;
+      return d ? { title: `\ud83e\udded ${d.n}`, body: d.why.slice(0, 170), url: APPS_URL + 'afaq/#travel' } : null;
     } catch { return null; }
   });
-
-  // his own affirmations, in daylight — replaces the lab slot on days it exists? No: gets slot 5.
-  kinds.push(seed => affirmationLine(seed));
 
   const chosen = kinds.slice(0, SLOTS.length + 1);
   let slot = 0;
