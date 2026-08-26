@@ -18,6 +18,8 @@ import { buildQueue, BUNDLES, PRAYER_LABEL, place, prayerTimes, leftLabel } from
 import { TIER_LABEL } from './rank.js';
 import * as NB from './native.js';
 import * as MO from './moments.js';
+import * as HK from './hikma.js';
+import * as SR from './sirah.js';
 
 const $ = (s, r = document) => r.querySelector(s);
 const app = $('#app');
@@ -127,6 +129,11 @@ function viewToday() {
       <p class="eyebrow">${esc(longDate())}</p>
       <h1>${esc(greeting())}, Musaed</h1>
       <p class="sub" id="q-sub"></p>
+      ${(() => { try {
+        const l = HK.lineFor(R.iso(), Q);
+        return `<div class="hikma"><div class="hk-ar" dir="rtl" lang="ar">${esc(l.ar)}</div>
+          <div class="hk-en">${esc(l.en)}</div><div class="hk-src">${esc(l.src)}</div></div>`;
+      } catch { return ''; } })()}
     </header>
     <div id="queue"></div>
     ${todoBar()}
@@ -679,6 +686,7 @@ const SECTIONS = [
   { hash: '#/',     label: 'Today', ico: '◈' },
   { hash: '#/log',  label: 'Log',   ico: '▦' },
   { hash: '#/apps', label: 'Apps',  ico: '◫' },
+  { hash: '#/sirah', label: 'Sīrah', ico: '❖' },
   { hash: '#/data', label: 'Data',  ico: '↧' }
 ];
 
@@ -1675,6 +1683,39 @@ async function syncAgenda() {
 /* ══════════════════════════════════════════════════════════════════
    Router
    ══════════════════════════════════════════════════════════════════ */
+/* ══════════════════════════════════════════════════════════════════
+   SĪRAH — the weekly chronicle. Frozen pages first written on visit.
+   ══════════════════════════════════════════════════════════════════ */
+function viewSirah() {
+  let frozen = [], current = null, sealedNow = false;
+  try {
+    if (SNAP) {
+      const got = SR.ensure(SNAP, R.iso());
+      sealedNow = got.fresh;
+      current = SR.preview(SNAP, R.iso());
+    }
+    frozen = SR.archive();
+  } catch (e) { console.warn('sirah:', e); }
+
+  const page = (w, paras, live) => `<article class="sirah-page">
+    <div class="sirah-week">${live ? 'This week — still being written' :
+      'Week ending ' + esc(new Date(w + 'T00:00').toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' }))}</div>
+    ${paras.map(p => `<p>${esc(p)}</p>`).join('')}
+  </article>`;
+
+  app.innerHTML = `
+    <header class="masthead">
+      <p class="eyebrow">The chronicle</p>
+      <h1>Sīrah</h1>
+      <p class="sub">Every app in this house measures; this page remembers. One page a week,
+      written from what was actually logged, sealed each Friday night and never rewritten.
+      ${sealedNow ? '<b>Last week\u2019s page was just sealed.</b>' : ''}</p>
+    </header>
+    ${current ? page(current.week, current.paras, true) : ''}
+    ${frozen.length ? frozen.map(f => page(f.week, f.paras, false)).join('')
+      : '<div class="sect"><div class="note">No sealed pages yet — the first will be written when this week closes on Friday.</div></div>'}`;
+}
+
 function paint() {
   const hash = location.hash || '#/';
   document.body.classList.remove('framed');
@@ -1686,6 +1727,7 @@ function paint() {
   else if (hash === '#/log') { nav = 'log'; viewLog(); }
   else if (hash === '#/apps') { nav = 'apps'; viewApps(); }
   else if (hash === '#/data') { nav = 'data'; viewData(); }
+  else if (hash === '#/sirah') { nav = 'sirah'; viewSirah(); }
   else viewToday();
   document.querySelectorAll('.nav a').forEach(a => a.classList.toggle('on', a.dataset.nav === nav));
   const mb = $('#menu');

@@ -67,9 +67,49 @@ async function affirmationLine(seed) {
   } catch { return null; }
 }
 
+/* ── the presence deck ──
+   While a trip is live the pushes change register entirely. A year of
+   optimisation earns six days of presence; the machine that says "go, do,
+   improve" all year is the same machine that must know when to say "be here".
+   Family first, itinerary second, phone last. */
+const PRESENCE = [
+  { t: '⚘ People, not places', b: 'One photo of your family today, not the scenery. The fog is in everyone\u2019s photos; your mother laughing inside it will be only in yours.' },
+  { t: '⚘ Ask the eldest', b: 'Ask the oldest person at the table what this place was like the first time they saw it. Then just listen.' },
+  { t: '⚘ The itinerary serves', b: 'If everyone is happy at the pool, the wadi can wait for another year. The plan is a servant, not a debt.' },
+  { t: '⚘ Buy the coconut', b: 'Buy the coconut. Overpay a little. Generosity on a holiday is remembered for decades; the dinar is not.' },
+  { t: '⚘ Ten unnarrated minutes', b: 'Sit in the fog for ten minutes without filming it, describing it, or improving it. Let it just be weather.' },
+  { t: '⚘ A Maghrib to keep', b: 'Pray Maghrib somewhere you will want to remember having prayed. That is the photograph that lasts.' },
+  { t: '⚘ Someone else\u2019s day', b: 'Let someone else choose today\u2019s plan — and go along with your whole heart, not half of it.' },
+  { t: '⚘ Trade one story', b: 'Tell one story from your childhood at dinner tonight. Ask for one back. This is what the table is for.' },
+  { t: '⚘ The ten-year-old', b: 'Do one thing today that your ten-year-old self would have loved. He is still in there, and he is on holiday too.' },
+  { t: '⚘ Easy to be with', b: '\u062e\u064a\u0631\u0643\u0645 \u062e\u064a\u0631\u0643\u0645 \u0644\u0623\u0647\u0644\u0647 \u2014 the best of you is the best to his family. Today, be the reason the trip is easy.' },
+];
+
+const liveTrip = () => {
+  try {
+    const t = new Date(); const d = `${t.getFullYear()}-${String(t.getMonth()+1).padStart(2,'0')}-${String(t.getDate()).padStart(2,'0')}`;
+    const af = JSON.parse(localStorage.getItem('afaq.v1') || 'null');
+    return (af?.trips || []).find(x => x.from <= d && x.to >= d && x.status !== 'idea') || null;
+  } catch { return null; }
+};
+
 export async function build(date) {
-  const out = [];
   const kinds = [];
+
+  /* A live trip swaps the whole deck: dawn dhikr stays, everything else
+     becomes presence. Deterministic draw without repeats across the day. */
+  if (liveTrip()) {
+    kinds.push(seed => {
+      const d = pick(ADHKAR, seed);
+      return { title: d.a, body: `${d.t} — ${d.src}`, url: APPS_URL + 'sakina/prayer/' };
+    });
+    const start = h32(date) % PRESENCE.length;
+    for (let i = 0; i < SLOTS.length - 1; i++) {
+      const card = PRESENCE[(start + i) % PRESENCE.length];
+      kinds.push(() => ({ title: card.t, body: card.b, url: APPS_URL + 'afaq/#travel' }));
+    }
+    return assemble(date, kinds);
+  }
 
   // 07:05 — rising: dhikr
   kinds.push(seed => {
@@ -158,6 +198,11 @@ export async function build(date) {
     } catch { return null; }
   });
 
+  return assemble(date, kinds);
+}
+
+async function assemble(date, kinds) {
+  const out = [];
   const chosen = kinds.slice(0, SLOTS.length + 1);
   let slot = 0;
   for (let k = 0; k < chosen.length && slot < SLOTS.length; k++) {

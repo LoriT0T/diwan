@@ -17,6 +17,7 @@ const BLANK = {
   v: 1,
   gc: null,          // { data, importedAt }  — pasted Good Company export
   lastBackup: null,  // ISO date of the last unified export
+  sirah: {},         // { 'YYYY-MM-DD' (a Friday): { paras, stats, at } } — frozen weekly chronicles
   /* Things that belong to one day and to no app — "ring the dentist", "pack the
      charger". They live here rather than being pushed into a sibling, because none of
      the six owns them and inventing a home would distort whichever got them. */
@@ -77,6 +78,10 @@ export function importGC(text) {
 export function forgetGC() { S.gc = null; save(); }
 
 export function markBackup(dateISO) { S.lastBackup = dateISO; save(); }
+
+/* ---------- sīrah: frozen weekly pages ---------- */
+export const sirahAll = () => S.sirah || {};
+export function putSirah(week, page) { S.sirah ||= {}; S.sirah[week] = page; save(); }
 
 /* ---------- the day's own list ---------- */
 export const todos = (date) => (S.todos || []).filter(t => !date || t.date === date);

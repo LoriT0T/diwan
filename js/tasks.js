@@ -263,6 +263,19 @@ export async function buildQueue(snap) {
   const out = [];
   const byId = id => snap.apps.find(a => a.id === id);
 
+  /* ── The season check. A live trip is not a scheduling conflict, it is a
+     different season of life, and a register with taste knows the difference.
+     While one runs: prayers, practices, journal, the portable rituals and the
+     trip's own days stay; the machinery that belongs to home — the gym
+     schedule, the supplement cabinet, the moto ladder, the call booth, the
+     lab's heavier gears — stands down without being marked 'missed'. */
+  const tripping = (() => {
+    try {
+      const af = JSON.parse(localStorage.getItem('afaq.v1') || 'null');
+      return (af?.trips || []).find(t => t.from <= date && t.to >= date && t.status !== 'idea') || null;
+    } catch { return null; }
+  })();
+
   /* ── Compound ── */
   const comp = byId('compound');
   if (comp && comp.ok) {
@@ -716,6 +729,26 @@ export async function buildQueue(snap) {
         cta: openBooks.length ? 'Log pages' : 'Open the Shelf'
       });
 
+      /* ── Transmutation owed — his own named risk, gated ──
+         "Knowledge without implementation" is the documented failure mode of
+         this whole enterprise. Seven days after reading, the register asks the
+         only question that converts intake to output. One book a day, oldest
+         debt first, so it is a ritual rather than a pile. */
+      try {
+        const owed = (A.owedAmal ? A.owedAmal() : []);
+        if (owed.length) {
+          const { b, days } = owed.sort((x, y) => y.days - x.days)[0];
+          out.push({
+            key: 'anbiq:amal:' + b.id, app: 'anbiq', label: `Transmute — ${b.title}`,
+            ico: '⚗', note: 'Output', domain: 'reading',
+            brief: `Read ${days} days ago. One line: what did it change? Unconverted reading is decoration.`,
+            at: null, slot: 'any', done: false, tier: 'due',
+            words: ['transmute', 'amal', 'changed'],
+            action: null, href: anb.url, cta: 'One line'
+          });
+        }
+      } catch { /* an older Anbīq build without the API — the task simply waits */ }
+
       /* The daily conjunction only exists once there are two claims to collide. */
       if (A.live().filter(c => c.text.trim()).length >= 2) {
         const doneToday = !!A.crucibleOn(date);
@@ -1056,6 +1089,40 @@ export async function buildQueue(snap) {
     if (t.done || !t.action || t.isNote) continue;
     if (skips[t.key]) t.skipped = true;
     t.alt = t.alt || { label: 'Skip', action: { kind: 'diwan.skip', date, key: t.key } };
+  }
+
+  /* ── Friday: the week's page ──
+     The chronicle drafts all week and seals at midnight into Saturday. Friday
+     night, after Witr's hour, is when it is meant to be read — the week
+     reviewed as a story rather than a scoreboard. */
+  if (new Date(date + 'T12:00').getDay() === 5) {
+    out.push({
+      key: 'diwan:sirah', app: 'diwan', label: 'Read the week\u2019s s\u012brah', ico: '\u2756',
+      note: 'The chronicle', domain: 'note',
+      brief: 'The week, written down as a page — it seals at midnight. Two minutes; it is your own biography.',
+      at: at(21.5), done: false, tier: 'review',
+      words: ['sirah', 'chronicle', 'week'],
+      action: null, href: '#/sirah', cta: 'Read it'
+    });
+  }
+
+  /* The season filter runs last so every task above stays honestly built —
+     the register knows what it is choosing not to ask for. Done items stay
+     visible (work he chose to do on holiday still counts); open pushes for
+     home machinery disappear rather than nag from another country. */
+  if (tripping) {
+    const HOME = new Set(['workout', 'fuel', 'cabinet', 'test', 'call', 'warmup', 'rep',
+                          'field', 'review', 'crucible', 'claims', 'prediction', 'dispatch',
+                          'pursuit', 'ride', 'screen']);
+    const kept = out.filter(t => t.done || !HOME.has(t.domain));
+    kept.push({
+      key: 'diwan:season', app: 'afaq', label: `Standing down for ${tripping.name}`,
+      ico: '⚘', note: 'Season', domain: 'note', isNote: true,
+      brief: 'Prayers, presence and the trip itself. The gym, the lab and the ladders wait at home — unmissed.',
+      at: null, slot: 'any', done: false, tier: 'housekeeping',
+      words: [], action: null, href: (byId('afaq') || {}).url ? byId('afaq').url + '#travel' : null, cta: 'The trip'
+    });
+    return order(kept);
   }
 
   return order(out);

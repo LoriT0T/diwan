@@ -17,7 +17,7 @@
   --compound:#ff4d2e;
   --jamal:#c1a06a;
   --anbiq:#7fd6c9;
-  --sakina:#7d9a86;
+  --sakina:#7d9a86; --diwan:#c9a227;
   --gc:#9085e9;
   --afaq:#4f9ecf;
 
@@ -757,3 +757,16 @@ html.native .fb-out{display:none}
 .trow.is-skipped{opacity:.55}
 .trow.is-skipped .t-label{text-decoration:line-through;text-decoration-color:var(--tx-3)}
 .sect-h h3.skip{color:var(--warn)}
+
+/* ---------- hikma: the dīwān's daily line ---------- */
+.hikma{margin-top:16px;padding:13px 15px;border-left:2px solid var(--acc,#c9a227);background:color-mix(in srgb, var(--acc,#c9a227) 5%, transparent);border-radius:0 8px 8px 0}
+.hk-ar{font-size:17.5px;line-height:1.85;font-weight:500;letter-spacing:.01em}
+.hk-en{color:var(--tx-2);font-size:12.5px;line-height:1.5;margin-top:6px;font-style:italic}
+.hk-src{color:var(--tx-3);font-size:10.5px;margin-top:5px;letter-spacing:.06em;text-transform:uppercase}
+
+/* ---------- sīrah: the weekly chronicle ---------- */
+.sirah-page{padding:18px 0;border-bottom:1px solid var(--line)}
+.sirah-page:last-child{border-bottom:0}
+.sirah-week{font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--tx-3);margin-bottom:8px}
+.sirah-page p{font-size:14.5px;line-height:1.75;color:var(--tx);margin:0 0 13px;max-width:62ch}
+.sirah-page p:last-child{margin-bottom:0}
