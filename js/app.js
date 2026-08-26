@@ -1175,29 +1175,48 @@ function viewData() {
    SYNC — the account, and the state of it.
    ══════════════════════════════════════════════════════════════════ */
 let syncing = false;
+const bootedAt = Date.now();
 
-async function runSync(label) {
+/* A sync is MANUAL when the user asked for it (the button, a sign-in) and
+   BACKGROUND when a timer did. The difference is everything: a manual sync may
+   repaint, reload the mounted app and announce itself — the user is waiting for
+   exactly that. A background sync must never interrupt: no frame reloads, no
+   repaint under a reading eye, no toast. What it fetched simply becomes what the
+   next natural navigation shows — every mount reads fresh, and the existing
+   visibility/hashchange handlers already re-read on return. The one exception is
+   the first sync after page load: the register is still settling, so correcting
+   it immediately is arrival, not interruption. */
+async function runSync(label, { manual = false } = {}) {
   if (syncing || !C.signedIn()) return;
+  manual = manual || !!label;
   syncing = true;
   const el = $('#sy-state');
   const say = m => { if (el) el.textContent = m; };
   say(label || 'Syncing…');
   const r = await SY.sync({ onStep: say });
   syncing = false;
-  if (!r.ok) { say(''); toast(r.error, { bad: true }); return r; }
-  await refresh();
-  /* An app mounted right now is showing what it read before the merge. Reload the frame
-     so it picks up what just arrived, rather than sitting on a stale view of its own data. */
-  if (r.took || r.removed) {
+  if (!r.ok) {
+    say('');
+    if (manual) toast(r.error, { bad: true });
+    else console.warn('background sync:', r.error);
+    return r;
+  }
+  const changed = !!(r.took || r.removed);
+  const justBooted = Date.now() - bootedAt < 20_000;
+  if (manual || (changed && justBooted)) await refresh();
+  else say('');
+  if (manual && changed) {
     const f = $('iframe.frame');
     if (f) { try { f.contentWindow.location.reload(); } catch { f.src = f.src; } }
   }
-  const bits = [];
-  if (r.took) bits.push(`${r.took} in`);
-  if (r.sent) bits.push(`${r.sent} out`);
-  if (r.removed) bits.push(`${r.removed} deleted`);
-  if (r.kept) bits.push(`${r.kept} kept local`);
-  toast(bits.length ? `Synced — ${bits.join(', ')}.` : 'Synced. Nothing had changed.');
+  if (manual) {
+    const bits = [];
+    if (r.took) bits.push(`${r.took} in`);
+    if (r.sent) bits.push(`${r.sent} out`);
+    if (r.removed) bits.push(`${r.removed} deleted`);
+    if (r.kept) bits.push(`${r.kept} kept local`);
+    toast(bits.length ? `Synced — ${bits.join(', ')}.` : 'Synced. Nothing had changed.');
+  }
   if (r.notes && r.notes.length) console.info('sync notes:', r.notes);
   return r;
 }
@@ -1314,7 +1333,7 @@ function wireSync() {
       paint(); await runSync('First sync…');
     } catch (e) { msg(e.message); }
   });
-  $('#sy-now') && ($('#sy-now').onclick = () => runSync());
+  $('#sy-now') && ($('#sy-now').onclick = () => runSync('Syncing…', { manual: true }));
 
   if ($('#sy-pending')) SY.pending().then(n => {
     const e = $('#sy-pending'); if (e) e.textContent = n == null ? 'all' : String(n);
