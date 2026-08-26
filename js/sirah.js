@@ -50,14 +50,24 @@ function harvest(snap, fri) {
   f.moods = moods.length;
   f.moodsUp = moods.filter(x => x.text.includes('pleasant,') && !x.text.includes('unpleasant')).length;
 
-  let practice = 0;
+  let practice = 0, ihsan = 0;
   try {
     for (const d of days) {
       const p = D.practiceOn(d) || {};
       practice += Object.values(p).filter(Boolean).length;
+      if (p.ihsan) ihsan++;
     }
   } catch { /* none recorded */ }
   f.practice = practice;
+  f.ihsan = ihsan;
+
+  f.reaches = 0; f.reachedNames = [];
+  try {
+    for (const p of D.rahim()) {
+      const hits = (p.log || []).filter(d => days.has(d));
+      if (hits.length) { f.reaches += hits.length; f.reachedNames.push(p.name); }
+    }
+  } catch { /* older store */ }
 
   const cmp = feedOf('compound');
   const sessions = cmp.filter(x => /— \d+ sets?$/.test(x.text));
@@ -88,10 +98,12 @@ function harvest(snap, fri) {
   const af = feedOf('afaq');
   f.watched = af.filter(x => x.text.startsWith('Watched')).length;
   f.craftMins = af.filter(x => /min of practice/.test(x.text)).reduce((n, x) => n + (parseInt(x.text) || 0), 0);
-  f.trip = null;
+  f.trip = null; f.keeps = [];
   try {
     const a = JSON.parse(localStorage.getItem('afaq.v1') || 'null');
-    f.trip = (a?.trips || []).find(t => t.status !== 'idea' && t.from <= fri && t.to >= shift(fri, -6))?.name || null;
+    const tr = (a?.trips || []).find(t => t.status !== 'idea' && t.from <= fri && t.to >= shift(fri, -6));
+    f.trip = tr?.name || null;
+    if (tr) f.keeps = (tr.days || []).filter(d => days.has(d.date) && d.keep).map(d => d.keep);
   } catch { /* absent */ }
 
   return f;
@@ -169,6 +181,19 @@ function compose(f, fri, prev) {
     if (f.journal) bits.push(`${f.journal} page${f.journal === 1 ? '' : 's'} of journal`);
     if (f.moods) bits.push(`${f.moods} mood${f.moods === 1 ? '' : 's'} taken${f.moodsUp ? `, ${f.moodsUp} of them pleasant` : ''}`);
     P.push(`And the life around the work: ${bits.join('; ')}.`);
+  }
+
+  /* the outward face — kindness and kinship, the parts that are not about him */
+  if (f.ihsan || f.reaches) {
+    const bits = [];
+    if (f.ihsan) bits.push(`${f.ihsan} quiet kindness${f.ihsan === 1 ? '' : 'es'} passed through the week — recorded only as a number, by design`);
+    if (f.reaches) bits.push(`the ties were kept ${f.reaches} time${f.reaches === 1 ? '' : 's'}${f.reachedNames.length ? ` (${f.reachedNames.join(', ')})` : ''}`);
+    P.push(`And the part that points outward: ${bits.join('; ')}.`);
+  }
+
+  /* what the road left behind */
+  if (f.keeps.length) {
+    P.push('Kept from the days themselves: ' + f.keeps.slice(0, 3).map(k => `\u201c${k}\u201d`).join(' \u00b7 ') + '.');
   }
 
   /* closing */

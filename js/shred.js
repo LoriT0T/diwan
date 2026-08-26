@@ -352,6 +352,7 @@ const diwan = {
     one(s.health, 'health', o);
     two(s.skips, 'skip', o);
     one(s.sirah, 'sirah', o);
+    list(s.rahim, 'rahim', o);
     if (s.gc) o.gc = s.gc;
     if (s.lastBackup) o.lastBackup = s.lastBackup;
     return o;
@@ -364,6 +365,7 @@ const diwan = {
     s.health = unOne(r, 'health');
     s.skips = unTwo(r, 'skip');
     s.sirah = unOne(r, 'sirah');
+    s.rahim = unList(r, 'rahim');
     s.gc = 'gc' in r ? r.gc : null;
     s.lastBackup = 'lastBackup' in r ? r.lastBackup : null;
     s.v = 1;

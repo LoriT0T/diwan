@@ -18,6 +18,10 @@ const BLANK = {
   gc: null,          // { data, importedAt }  — pasted Good Company export
   lastBackup: null,  // ISO date of the last unified export
   sirah: {},         // { 'YYYY-MM-DD' (a Friday): { paras, stats, at } } — frozen weekly chronicles
+  /* The people who must never drift. Ṣilat ar-raḥim is a duty before it is a
+     feature, and none of the six apps owns the humans in his life — so the
+     register does. { id, name, every (days), last (ISO), log: [ISO…] } */
+  rahim: [],
   /* Things that belong to one day and to no app — "ring the dentist", "pack the
      charger". They live here rather than being pushed into a sibling, because none of
      the six owns them and inventing a home would distort whichever got them. */
@@ -78,6 +82,28 @@ export function importGC(text) {
 export function forgetGC() { S.gc = null; save(); }
 
 export function markBackup(dateISO) { S.lastBackup = dateISO; save(); }
+
+/* ---------- the ties ---------- */
+export const rahim = () => S.rahim || [];
+export function addRahim(name, every) {
+  S.rahim ||= [];
+  const p = { id: Math.random().toString(36).slice(2, 9), name: String(name).trim(),
+              every: Math.max(1, Number(every) || 7), last: null, log: [] };
+  S.rahim.push(p); save(); return p;
+}
+export function markRahim(id, dateISO) {
+  const p = (S.rahim || []).find(x => x.id === id); if (!p) return null;
+  const prev = p.last;
+  p.last = dateISO; p.log ||= [];
+  if (!p.log.includes(dateISO)) p.log.push(dateISO);
+  p.log = p.log.slice(-30);
+  save(); return { prev };
+}
+export function unmarkRahim(id, dateISO, prev) {
+  const p = (S.rahim || []).find(x => x.id === id); if (!p) return;
+  p.last = prev ?? null; p.log = (p.log || []).filter(d => d !== dateISO); save();
+}
+export function killRahim(id) { S.rahim = (S.rahim || []).filter(x => x.id !== id); save(); }
 
 /* ---------- sīrah: frozen weekly pages ---------- */
 export const sirahAll = () => S.sirah || {};

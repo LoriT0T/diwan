@@ -315,6 +315,13 @@ async function diwanSkip({ date, key }) {
 }
 
 /* ── the listening practice ── */
+async function diwanRahim({ id, date }) {
+  const D = await import('./store.js');
+  const r = D.markRahim(id, date);
+  if (!r) return { ok: false, error: 'That person is no longer in the ties list.' };
+  return { ok: true, done: true, undo: () => D.unmarkRahim(id, date, r.prev) };
+}
+
 async function diwanPractice({ date, which }) {
   const D = await import('./store.js');
   const now = D.togglePractice(date, which);
@@ -338,6 +345,7 @@ const HANDLERS = {
   'afaq.item':     afaqItem,
   'diwan.todo':    diwanTodo,
   'diwan.practice': diwanPractice,
+  'diwan.rahim':   diwanRahim,
   'diwan.skip':    diwanSkip
 };
 

@@ -677,6 +677,21 @@ export async function buildQueue(snap) {
         href: sak.url + 'prayer/'
       });
 
+      /* ── One quiet kindness ──
+         Six apps and every one of them points at himself. This is the tick
+         that points outward. By design the register keeps THAT it happened
+         and never what it was — a kindness described in a log is halfway to
+         a performance, and the adab of the thing is the whole thing. */
+      out.push({
+        key: 'diwan:ihsan', app: 'diwan', label: 'One quiet kindness', note: 'The upper hand', ico: '🤲',
+        domain: 'practice', brief: 'Done, never described. The register keeps that it happened — what it was stays between you and Allah.',
+        at: null, slot: 'any', done: !!prac.ihsan, tier: 'due', daily: true,
+        wk: wkDays(date, d => !!D.practiceOn(d).ihsan),
+        words: ['kindness', 'ihsan', 'sadaqa', 'quiet'],
+        action: { kind: 'diwan.practice', date, which: 'ihsan' },
+        href: '#/'
+      });
+
       out.push({
         key: 'sakina:affirmations', app: 'sakina', label: 'Affirmations', note: 'Practice', ico: '🎧',
         domain: 'affirmations', brief: 'On the way down, not something to concentrate on.',
@@ -1091,6 +1106,42 @@ export async function buildQueue(snap) {
     t.alt = t.alt || { label: 'Skip', action: { kind: 'diwan.skip', date, key: t.key } };
   }
 
+  /* ── Ṣilat ar-raḥim — the ties ──
+     One nudge a day at most, for whoever has drifted furthest past their own
+     cadence. Reaching them is a real tick: it writes the date into the
+     register. Until any ties are named, a quiet note offers the ledger. */
+  {
+    const people = D.rahim();
+    if (people.length) {
+      const over = people
+        .map(p => ({ p, days: p.last ? between(p.last, date) : null }))
+        .filter(x => x.days === null || x.days >= x.p.every)
+        .sort((a, b) => (b.days ?? 9999) - (a.days ?? 9999));
+      if (over.length) {
+        const { p, days } = over[0];
+        out.push({
+          key: 'diwan:rahim:' + p.id, app: 'diwan', label: `Reach ${p.name}`, ico: '🫶',
+          note: 'The ties', domain: 'ties',
+          brief: days === null
+            ? `Never yet marked. A voice note counts as the whole deed.`
+            : `${days} days since last contact — their cadence is every ${p.every}. Two minutes closes it.`,
+          at: null, slot: 'any', done: p.last === date, tier: 'due',
+          words: ['reach', 'ties', p.name.toLowerCase()],
+          action: { kind: 'diwan.rahim', id: p.id, date },
+          href: '#/ties'
+        });
+      }
+    } else if (new Date(date + 'T12:00').getDay() === 5) {
+      out.push({
+        key: 'diwan:ties-intro', app: 'diwan', label: 'Name the ties that must never drift', ico: '🫶',
+        note: 'Ṣilat ar-raḥim', domain: 'note', isNote: true,
+        brief: 'The register can keep your people the way it keeps your prayers — each with their own cadence, one nudge a day for whoever has drifted furthest.',
+        at: null, slot: 'any', done: false, tier: 'housekeeping',
+        words: ['ties', 'rahim'], action: null, href: '#/ties', cta: 'Open the ledger'
+      });
+    }
+  }
+
   /* ── Friday: the week's page ──
      The chronicle drafts all week and seals at midnight into Saturday. Friday
      night, after Witr's hour, is when it is meant to be read — the week
@@ -1121,6 +1172,18 @@ export async function buildQueue(snap) {
       brief: 'Prayers, presence and the trip itself. The gym, the lab and the ladders wait at home — unmissed.',
       at: null, slot: 'any', done: false, tier: 'housekeeping',
       words: [], action: null, href: (byId('afaq') || {}).url ? byId('afaq').url + '#travel' : null, cta: 'The trip'
+    });
+    /* The day's keeping: one line each trip evening, written in Āfāq on the
+       trip itself, quoted later by the week's sīrah. The residue a trip
+       leaves should be a sentence, not only a scoreboard. */
+    const todayDay = (tripping.days || []).find(d => d.date === date);
+    kept.push({
+      key: 'diwan:keep', app: 'afaq', label: 'Keep one thing from today', ico: '✒',
+      note: tripping.name, domain: 'trip',
+      brief: 'One line. Not the itinerary — the moment. It goes into the week\u2019s s\u012brah.',
+      at: at(21.75), done: !!(todayDay && todayDay.keep), tier: 'due',
+      words: ['keep', 'keeping'],
+      action: null, href: (byId('afaq') || {}).url ? byId('afaq').url + '#travel' : null, cta: 'Write it'
     });
     return order(kept);
   }

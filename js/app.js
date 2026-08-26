@@ -687,6 +687,7 @@ const SECTIONS = [
   { hash: '#/log',  label: 'Log',   ico: '▦' },
   { hash: '#/apps', label: 'Apps',  ico: '◫' },
   { hash: '#/sirah', label: 'Sīrah', ico: '❖' },
+  { hash: '#/ties',  label: 'Ties',  ico: '🫶' },
   { hash: '#/data', label: 'Data',  ico: '↧' }
 ];
 
@@ -1684,6 +1685,81 @@ async function syncAgenda() {
    Router
    ══════════════════════════════════════════════════════════════════ */
 /* ══════════════════════════════════════════════════════════════════
+   TIES — ṣilat ar-raḥim as a ledger. The people who must never drift,
+   each with their own cadence. One nudge a day in the queue, for
+   whoever has drifted furthest. The register keeps dates, never words.
+   ══════════════════════════════════════════════════════════════════ */
+function viewTies() {
+  const t = R.iso();
+  const people = D.rahim().slice().sort((a, b) => {
+    const da = a.last ? R.between(a.last, t) - a.every : 9999;
+    const db = b.last ? R.between(b.last, t) - b.every : 9999;
+    return db - da;
+  });
+
+  const row = p => {
+    const days = p.last ? R.between(p.last, t) : null;
+    const over = days === null || days >= p.every;
+    const state = days === null ? 'never yet marked'
+      : days === 0 ? 'reached today'
+      : `${days} day${days === 1 ? '' : 's'} ago`;
+    return `<div class="trow" style="--hue:var(--diwan)">
+      <button class="tick${p.last === t ? ' on' : ''}" data-rahim="${esc(p.id)}" aria-label="Mark ${esc(p.name)} reached">${p.last === t ? '✓' : ''}</button>
+      <a class="t-body" href="#/ties">
+        <span class="t-mid">
+          <span class="t-label">${esc(p.name)}</span>
+          <span class="t-note">every ${p.every}d · ${esc(state)}${over && p.last !== t ? ' · <b>drifting</b>' : ''}</span>
+        </span>
+      </a>
+      <button class="btn quiet" data-rahim-kill="${esc(p.id)}" aria-label="Remove ${esc(p.name)}">✕</button>
+    </div>`;
+  };
+
+  app.innerHTML = `
+    <header class="masthead">
+      <p class="eyebrow">Ṣilat ar-raḥim</p>
+      <h1>The ties</h1>
+      <p class="sub">مَنْ أَحَبَّ أَنْ يُبْسَطَ لَهُ فِي رِزْقِهِ وَيُنْسَأَ لَهُ فِي أَثَرِهِ فَلْيَصِلْ رَحِمَهُ — whoever loves that his provision be
+      widened and his life-trace lengthened, let him keep his kinship ties (Bukhārī &amp; Muslim). The register keeps
+      the dates and never the words: name each person, give them a cadence, and the queue will carry <b>one</b>
+      nudge a day for whoever has drifted furthest. A voice note counts as the whole deed.</p>
+    </header>
+    <div class="sect">
+      ${people.length ? people.map(row).join('') : '<div class="note">No one named yet. Start with the person you already know you call too rarely.</div>'}
+    </div>
+    <div class="sect">
+      <div class="note" style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+        <input id="tie-name" placeholder="Name" style="flex:2;min-width:120px;background:var(--bg-2,transparent);border:1px solid var(--line);border-radius:8px;padding:9px 11px;color:var(--tx);font:inherit">
+        <select id="tie-every" style="flex:1;min-width:90px;background:var(--bg-2,transparent);border:1px solid var(--line);border-radius:8px;padding:9px 8px;color:var(--tx);font:inherit">
+          <option value="2">every 2 days</option><option value="3">every 3 days</option>
+          <option value="7" selected>every week</option><option value="14">every fortnight</option>
+          <option value="30">every month</option><option value="90">every quarter</option>
+        </select>
+        <button class="btn" id="tie-add">Add</button>
+      </div>
+    </div>`;
+
+  $('#tie-add').onclick = () => {
+    const name = $('#tie-name').value.trim();
+    if (!name) { toast('A name first.'); return; }
+    D.addRahim(name, $('#tie-every').value);
+    toast(`${name} — in the ledger.`);
+    viewTies();
+  };
+  app.querySelectorAll('[data-rahim]').forEach(b => b.onclick = () => {
+    D.markRahim(b.dataset.rahim, t);
+    toast('Marked — the tie held today.');
+    viewTies();
+  });
+  app.querySelectorAll('[data-rahim-kill]').forEach(b => b.onclick = () => {
+    const p = D.rahim().find(x => x.id === b.dataset.rahimKill);
+    D.killRahim(b.dataset.rahimKill);
+    toast(`${p ? p.name : 'Removed'} — out of the ledger.`);
+    viewTies();
+  });
+}
+
+/* ══════════════════════════════════════════════════════════════════
    SĪRAH — the weekly chronicle. Frozen pages first written on visit.
    ══════════════════════════════════════════════════════════════════ */
 function viewSirah() {
@@ -1728,6 +1804,7 @@ function paint() {
   else if (hash === '#/apps') { nav = 'apps'; viewApps(); }
   else if (hash === '#/data') { nav = 'data'; viewData(); }
   else if (hash === '#/sirah') { nav = 'sirah'; viewSirah(); }
+  else if (hash === '#/ties') { nav = 'sirah'; viewTies(); }
   else viewToday();
   document.querySelectorAll('.nav a').forEach(a => a.classList.toggle('on', a.dataset.nav === nav));
   const mb = $('#menu');
