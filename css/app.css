@@ -247,7 +247,7 @@ textarea:focus{outline:2px solid var(--tx-3);outline-offset:1px}
   -webkit-backdrop-filter:saturate(150%) blur(14px);
   border-top:1px solid var(--line);padding-bottom:var(--safe-b);
 }
-.nav-in{max-width:720px;margin:0 auto;display:grid;grid-template-columns:repeat(4,1fr)}
+.nav-in{max-width:720px;margin:0 auto;display:grid;grid-template-columns:repeat(5,1fr)}
 .nav a{
   display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;
   min-height:56px;text-decoration:none;color:var(--tx-3);font-size:10.5px;letter-spacing:.02em;
