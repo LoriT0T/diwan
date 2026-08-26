@@ -67,6 +67,19 @@ export function place() {
     return raw ? { ...DEFAULT_PLACE, ...JSON.parse(raw) } : DEFAULT_PLACE;
   } catch { return DEFAULT_PLACE; }
 }
+/** Sunrise alone, for anchoring Duha. Deliberately not added to prayerTimes():
+    its entries are iterated as the five prayers by the agenda builder, and
+    sunrise announced as "It is time." would be a sixth prayer invented by a
+    data structure. */
+export function sunriseFor(date = new Date()) {
+  const p = place();
+  try {
+    const params = A.CalculationMethod[p.method] ? A.CalculationMethod[p.method]() : A.CalculationMethod.MoonsightingCommittee();
+    const pt = new A.PrayerTimes(new A.Coordinates(p.latitude, p.longitude), date, params);
+    return pt.sunrise;
+  } catch { return null; }
+}
+
 export function prayerTimes(date = new Date()) {
   const p = place();
   try {
@@ -621,6 +634,36 @@ export async function buildQueue(snap) {
         action: null, recordedBy: 'Sakina', href: sak.url + 'journal/', cta: 'Write it'
       });
 
+      /* ── the push further: Duha and Witr ──
+         His words: consistency, and something past the floor. These are sunnah,
+         so they are deliberately NOT in Sakina's five-prayer record and firm
+         mode never chases them — a missed Duha is a missed gift, not a debt.
+         Duha sits where the sunnah puts it, when the sun has climbed — anchored
+         to the real computed sunrise, not a clock hour. Witr is the day's last
+         word, after the affirmations have started carrying him down. */
+      const sunrise = sunriseFor();
+      if (sunrise) {
+        const duhaAt = new Date(sunrise.getTime() + 2 * 3600e3);
+        out.push({
+          key: 'diwan:duha', app: 'sakina', label: 'Duha', note: 'Sunnah', ico: '🌅',
+          domain: 'prayer', brief: 'Two rakʿāt when the sun has climbed. The morning’s extra.',
+          at: duhaAt, done: !!prac.duha, tier: 'due',
+          wk: wkDays(date, d => !!D.practiceOn(d).duha),
+          words: ['duha'],
+          action: { kind: 'diwan.practice', date, which: 'duha' },
+          href: sak.url + 'prayer/'
+        });
+      }
+      out.push({
+        key: 'diwan:witr', app: 'sakina', label: 'Witr', note: 'Sunnah', ico: '🌙',
+        domain: 'prayer', brief: 'The day’s last word. One rakʿah is enough; let it close the ledger.',
+        at: at(22.75), done: !!prac.witr, tier: 'due',
+        wk: wkDays(date, d => !!D.practiceOn(d).witr),
+        words: ['witr'],
+        action: { kind: 'diwan.practice', date, which: 'witr' },
+        href: sak.url + 'prayer/'
+      });
+
       out.push({
         key: 'sakina:affirmations', app: 'sakina', label: 'Affirmations', note: 'Practice', ico: '🎧',
         domain: 'affirmations', brief: 'On the way down, not something to concentrate on.',
@@ -656,14 +699,18 @@ export async function buildQueue(snap) {
       const readToday = st.sessions.some(x => x.date === date);
       const openBooks = A.reading();
 
+      /* Timed at the hour his own account says the learning impulse already
+         fires — "sometimes I learn randomly by watching YT videos at night".
+         Same hour, structured channel: the open book instead of the
+         algorithm, and it ends in claims rather than intake. */
       out.push({
         key: 'anbiq:read', app: 'anbiq', label: openBooks.length ? `Read — ${openBooks[0].title}` : 'Read',
         ico: '📖', wk: wkDays(date, d => st.sessions.some(x => x.date === d)),
         note: 'Reading', domain: 'reading',
         brief: openBooks.length
-          ? `${openBooks[0].cursor}/${openBooks[0].pages} pages · target ${st.set.pagesPerDay || 30}/day`
-          : 'Nothing open on the Shelf yet',
-        at: null, slot: 'any', done: readToday, tier: 'due', left: 0, daily: true,
+          ? `The YT hour, claimed. 25 min of ${openBooks[0].title} · ${openBooks[0].cursor}/${openBooks[0].pages}`
+          : 'The YT hour, claimed — but the Shelf is empty. Open a book there first.',
+        at: at(20.25), done: readToday, tier: 'due', left: 0, daily: true,
         words: ['read', 'reading', 'pages'],
         action: null, href: anb.url + (openBooks.length ? '' : '#shelf'),
         cta: openBooks.length ? 'Log pages' : 'Open the Shelf'
@@ -674,8 +721,8 @@ export async function buildQueue(snap) {
         const doneToday = !!A.crucibleOn(date);
         out.push({
           key: 'anbiq:crucible', app: 'anbiq', label: 'The Crucible', note: 'Recombination', ico: '⚭',
-          domain: 'crucible', brief: 'Today’s pair — the two most distant claims in the lab',
-          at: null, slot: 'any', done: doneToday, tier: 'due',
+          domain: 'crucible', brief: 'Straight after the reading, while it is warm — today’s pair of distant claims',
+          at: at(20.9), done: doneToday, tier: 'due',
           wk: wkDays(date, d => !!A.crucibleOn(d)),
           words: ['crucible', 'conjunction', 'synthesis'],
           action: null, href: anb.url + '#crucible', cta: 'Run it'
@@ -850,6 +897,7 @@ export async function buildQueue(snap) {
     try {
       const F = await import('../../afaq/js/store.js');
       const AE = await import('../../afaq/js/engine.js');
+      const DATA_SCHED = (await import('../../compound/js/data.js')).SCHEDULE;
       const st = F.state();
       const live = (st.trips || []).find(t => t.from <= date && t.to >= date && t.status !== 'idea');
       if (live) {
@@ -870,12 +918,24 @@ export async function buildQueue(snap) {
         const loggedToday = (p.logs || []).some(l => l.date === date);
         if (loggedToday) continue;
         const hob = (() => { try { return AE.craftLadder(p.hobbyId); } catch { return null; } })();
+        /* Placement is the whole fix. "Late in the day, at home, too lazy" was
+           never a discipline failure — nothing survives 8pm at home on
+           willpower. The hobby now rides the gym trip: on a training day it
+           sits ninety minutes after the session starts, while he is already
+           out, dressed and moving. One departure, two wins. On rest days it
+           takes the gym's own hour, because that slot is proven to work. */
+        const gymDay = (() => {
+          try { return !!(DATA_SCHED.find(x => x.day === new Date().getDay()) || {}).workout; }
+          catch { return false; }
+        })();
         out.push({
           key: 'afaq:pursuit:' + p.id, app: 'afaq',
           label: hob && hob.n ? `Practice — ${hob.n}` : 'Practice', note: 'Craft', ico: '✦',
           wk: wkDays(date, d => (p.logs || []).some(l => l.date === d)),
-          domain: 'pursuit', brief: 'Minutes go in the app',
-          at: null, slot: 'any', done: false, tier: 'due',
+          domain: 'pursuit',
+          brief: gymDay ? 'Straight off the gym trip — you are already out and moving. Twenty minutes counts.'
+                        : 'At the gym’s own hour: the one slot of the day that is proven to hold.',
+          at: at(gymDay ? HOUR.workout + 1.5 : HOUR.workout), done: false, tier: 'due',
           words: ['practice', 'practised', 'practiced'],
           action: null, href: afq.url + '#craft', cta: 'Log it'
         });

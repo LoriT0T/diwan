@@ -26,7 +26,7 @@ const ADHKAR = [
 ];
 
 /* The day's slots, local hours. Spread across the gaps the task list leaves. */
-const SLOTS = [10.5, 13.25, 16.5, 19.75, 21.5];
+const SLOTS = [10.5, 12.75, 15.0, 16.75, 19.0, 21.75];
 
 async function affirmationLine(seed) {
   /* His own track, speaking during the day. Newest affirmation track's script
@@ -100,14 +100,19 @@ export async function build(date) {
     } catch { return null; }
   });
 
-  // something to watch, or somewhere to go — alternating days
+  // something to watch AND somewhere to go — both, every day. His words:
+  // multiple recommendations of everything a day, and Āfāq is where the
+  // dissatisfaction lives, so it gets two voices where the others get one.
   kinds.push(async seed => {
     try {
       const D = await import('../../afaq/js/data.js');
-      if (h32(date) % 2 === 0) {
-        const t = pick(D.CATALOGUE.filter(x => x.why), seed);
-        return t ? { title: `🎬 ${t.t}`, body: t.why.slice(0, 170), url: APPS_URL + 'afaq/#screen' } : null;
-      }
+      const t = pick(D.CATALOGUE.filter(x => x.why), seed);
+      return t ? { title: `🎬 ${t.t}`, body: t.why.slice(0, 170), url: APPS_URL + 'afaq/#screen' } : null;
+    } catch { return null; }
+  });
+  kinds.push(async seed => {
+    try {
+      const D = await import('../../afaq/js/data.js');
       const d = pick(D.DESTS.filter(x => x.why), seed);
       return d ? { title: `🧭 ${d.n}`, body: d.why.slice(0, 170), url: APPS_URL + 'afaq/#travel' } : null;
     } catch { return null; }
