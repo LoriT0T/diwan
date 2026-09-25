@@ -353,6 +353,12 @@ const diwan = {
     two(s.skips, 'skip', o);
     one(s.sirah, 'sirah', o);
     list(s.rahim, 'rahim', o);
+    /* A per-device heartbeat, hour-grained so it writes at most once an hour: the
+       only way to tell from outside whether a device is actually syncing. */
+    const dev = window.DIWAN_NATIVE ? 'phone' : 'web';
+    const h = new Date(); h.setMinutes(0, 0, 0);
+    o['beat/' + dev] = { at: h.toISOString() };
+    for (const [k, v] of Object.entries(s.beats || {})) if (k !== dev) o['beat/' + k] = v;
     if (s.gc) o.gc = s.gc;
     if (s.lastBackup) o.lastBackup = s.lastBackup;
     return o;
@@ -366,6 +372,7 @@ const diwan = {
     s.skips = unTwo(r, 'skip');
     s.sirah = unOne(r, 'sirah');
     s.rahim = unList(r, 'rahim');
+    s.beats = unOne(r, 'beat');
     s.gc = 'gc' in r ? r.gc : null;
     s.lastBackup = 'lastBackup' in r ? r.lastBackup : null;
     s.v = 1;

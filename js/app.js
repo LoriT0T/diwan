@@ -136,6 +136,8 @@ function viewToday() {
           <div class="hk-en">${esc(l.en)}</div><div class="hk-src">${esc(l.src)}</div></div>`;
       } catch { return ''; } })()}
     </header>
+    ${C.config() && !C.signedIn() ? `<a class="note" href="#/data" style="display:block;margin:0 0 14px;border-color:var(--warn);color:var(--tx);text-decoration:none">
+      <b style="color:var(--warn)">Sync is signed out.</b> Nothing from your other devices or your account is arriving here. Tap to sign in again on Data.</a>` : ''}
     ${(() => { try { return TC.html(R.iso()); } catch (e) { console.warn('tripcard:', e); return ''; } })()}
     <div id="queue"></div>
     ${todoBar()}
@@ -1189,6 +1191,20 @@ function viewData() {
 let syncing = false;
 const bootedAt = Date.now();
 
+/* New data from a background sync, shown without interrupting: rebuild the queue,
+   and redraw only if Today is on screen and nothing is being typed — keeping the
+   scroll exactly where it was. No frame reload, no toast, no jump. */
+async function quietRefresh() {
+  SNAP = await R.readAll();
+  Q = await buildQueue(SNAP);
+  if (window.DIWAN_NATIVE) { try { Q.moments = await MO.build(R.iso()); } catch { Q.moments = []; } }
+  window.__DIWAN_Q = Q;
+  NB.publish(Q);
+  const onToday = !location.hash || location.hash === '#/';
+  const typing = document.activeElement && /INPUT|TEXTAREA|SELECT/.test(document.activeElement.tagName);
+  if (onToday && !typing) { const y = window.scrollY; viewToday(); window.scrollTo(0, y); }
+}
+
 /* A sync is MANUAL when the user asked for it (the button, a sign-in) and
    BACKGROUND when a timer did. The difference is everything: a manual sync may
    repaint, reload the mounted app and announce itself — the user is waiting for
@@ -1216,6 +1232,7 @@ async function runSync(label, { manual = false } = {}) {
   const changed = !!(r.took || r.removed);
   const justBooted = Date.now() - bootedAt < 20_000;
   if (manual || (changed && justBooted)) await refresh();
+  else if (changed) await quietRefresh();
   else say('');
   if (manual && changed) {
     const f = $('iframe.frame');
