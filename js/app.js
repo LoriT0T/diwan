@@ -20,6 +20,7 @@ import * as NB from './native.js';
 import * as MO from './moments.js';
 import * as HK from './hikma.js';
 import * as SR from './sirah.js';
+import * as TC from './tripcard.js';
 
 const $ = (s, r = document) => r.querySelector(s);
 const app = $('#app');
@@ -135,6 +136,7 @@ function viewToday() {
           <div class="hk-en">${esc(l.en)}</div><div class="hk-src">${esc(l.src)}</div></div>`;
       } catch { return ''; } })()}
     </header>
+    ${(() => { try { return TC.html(R.iso()); } catch (e) { console.warn('tripcard:', e); return ''; } })()}
     <div id="queue"></div>
     ${todoBar()}
     ${commandBar()}
@@ -146,6 +148,7 @@ function viewToday() {
   renderQueue();
   wireTodo();
   wireCommandBar();
+  try { TC.wire($('#tripcard'), R.iso(), () => refresh()); } catch (e) { console.warn('tripcard:', e); }
 }
 
 /* ══════════════════════════════════════════════════════════════════

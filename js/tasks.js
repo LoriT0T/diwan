@@ -272,7 +272,7 @@ export async function buildQueue(snap) {
   const tripping = (() => {
     try {
       const af = JSON.parse(localStorage.getItem('afaq.v1') || 'null');
-      return (af?.trips || []).find(t => t.from <= date && t.to >= date && t.status !== 'idea') || null;
+      return (af?.trips || []).find(t => t.from <= date && t.to >= date && t.status !== 'idea' && t.to > t.from) || null;
     } catch { return null; }
   })();
 
@@ -953,7 +953,7 @@ export async function buildQueue(snap) {
         for (const it of (day && day.items) || []) {
           out.push({
             key: 'afaq:item:' + it.id, app: 'afaq', label: it.txt || it.kind || 'Itinerary item',
-            ico: '🧳', note: live.name, domain: 'trip', brief: it.note || '',
+            ico: '🧳', note: live.name, domain: 'trip', brief: [it.where ? '📍 ' + it.where : '', it.how || '', it.tip || it.note || ''].filter(Boolean).join(' · '),
             at: it.t ? at(Number(it.t.split(':')[0]) + Number(it.t.split(':')[1] || 0) / 60) : null,
             slot: it.t ? null : 'any', done: !!it.done, tier: 'due',
             words: [(it.txt || '').toLowerCase()].filter(x => x.length > 3),

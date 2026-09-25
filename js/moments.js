@@ -89,7 +89,7 @@ const liveTrip = () => {
   try {
     const t = new Date(); const d = `${t.getFullYear()}-${String(t.getMonth()+1).padStart(2,'0')}-${String(t.getDate()).padStart(2,'0')}`;
     const af = JSON.parse(localStorage.getItem('afaq.v1') || 'null');
-    return (af?.trips || []).find(x => x.from <= d && x.to >= d && x.status !== 'idea') || null;
+    return (af?.trips || []).find(x => x.from <= d && x.to >= d && x.status !== 'idea' && x.to > x.from) || null;
   } catch { return null; }
 };
 
