@@ -87,7 +87,7 @@ export function lineFor(dateISO, q) {
 
   try {
     const af = JSON.parse(localStorage.getItem('afaq.v1') || 'null');
-    if ((af?.trips || []).some(t => t.from <= dateISO && t.to >= dateISO && t.status !== 'idea'))
+    if ((af?.trips || []).some(t => t.from <= dateISO && t.to >= dateISO && t.status !== 'idea' && t.to > t.from))
       tags.push('trip');
   } catch { /* no afaq on this device — the day is read without it */ }
 
