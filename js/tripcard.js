@@ -50,7 +50,7 @@ const mapsHref = s => {
   return `https://maps.apple.com/?daddr=${encodeURIComponent(s.where)}${f ? '&dirflg=' + f : ''}`;
 };
 
-function stopBlock(s, big) {
+function stopBlock(s, big, live = true) {
   const ico = KIND_ICO[s.kind] || '◉';
   const meta = [s.mins ? `${s.mins} min there` : '', s.cost ? s.cost : ''].filter(Boolean).join(' · ');
   return `<div class="tc-stop${big ? ' big' : ''}${s.done ? ' done' : ''}">
@@ -63,8 +63,8 @@ function stopBlock(s, big) {
       ${s.tip || s.note ? `<div class="tc-tip">${esc(s.tip || s.note)}</div>` : ''}
       ${big ? `<div class="tc-acts">
         ${s.where ? `<a class="btn" href="${esc(mapsHref(s))}" target="_blank" rel="noopener">Directions →</a>` : ''}
-        <button class="btn pri" data-tc-done="${esc(s.id)}">${s.done ? 'Undo' : 'Done ✓'}</button>
-      </div>` : `<button class="tc-mini" data-tc-done="${esc(s.id)}" aria-label="Mark done">${s.done ? '✓' : ''}</button>`}
+        ${live ? `<button class="btn pri" data-tc-done="${esc(s.id)}">${s.done ? 'Undo' : 'Done ✓'}</button>` : ''}
+      </div>` : live ? `<button class="tc-mini" data-tc-done="${esc(s.id)}" aria-label="Mark done">${s.done ? '✓' : ''}</button>` : ''}
     </div>
   </div>`;
 }
@@ -96,8 +96,8 @@ export function html(todayISO) {
     ${t.meet && (!live || doneN === 0) ? `<div class="tc-meet"><b>Meet:</b> ${esc(t.meet)}</div>` : ''}
 
     ${!stops.length ? `<div class="tc-empty">No stops planned for this day yet.</div>`
-      : now ? `<div class="tc-label">${live ? 'Now' : 'First stop'}</div>${stopBlock(now, true)}
-               ${next ? `<div class="tc-label">Then</div>${stopBlock(next, false)}` : ''}`
+      : now ? `<div class="tc-label">${live ? 'Now' : 'First stop'}</div>${stopBlock(now, true, live)}
+               ${next ? `<div class="tc-label">Then</div>${stopBlock(next, false, live)}` : ''}`
       : `<div class="tc-empty">Every stop done. Good day out.</div>`}
 
     ${bring.length ? `<div class="tc-label">Bring</div>
@@ -112,7 +112,7 @@ export function html(todayISO) {
       <ul class="tc-tips">${t.tips.map(x => `<li>${esc(x)}</li>`).join('')}</ul>` : ''}
 
     ${stops.length > 2 ? `<details class="tc-all"><summary>The whole plan · ${stops.length} stops</summary>
-      ${stops.map(s => stopBlock(s, false)).join('')}</details>` : ''}
+      ${stops.map(s => stopBlock(s, false, live)).join('')}</details>` : ''}
   </section>`;
 }
 
