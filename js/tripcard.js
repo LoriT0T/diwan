@@ -19,7 +19,8 @@
  *   tip    — the one thing worth knowing at that stop
  *   ico    — the stop's own emoji, so every place reads as itself
  *   facts  — things to know and tell about the place: the card's guidebook
- * And a trip may carry: with, meet, bring[{x, done}], contacts[{n, tel}], tips[].
+ * And a trip may carry: with, meet, bring[{x, done}], contacts[{n, tel}], tips[],
+ *   routes[{label, sub, stops[], mode, main}] — multi-stop Google Maps links (≤10 places each).
  */
 
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c =>
@@ -39,18 +40,24 @@ export function pick(todayISO) {
   return soon ? { t: soon, live: false, day: soon.from } : null;
 }
 
-/* Route mode from the stop's own words — the plan already says how. */
-function dirflg(how) {
+/* Route mode from the stop's own words — the plan already says how. A stop
+   reached by tube routes by transit; everything else on a day out is on foot. */
+function mode(how) {
   const h = (how || '').toLowerCase();
-  if (/walk|foot|stroll/.test(h)) return 'w';
-  if (/tube|line|bus|train|metro|overground|tram|dlr|rail/.test(h)) return 'r';
-  if (/drive|car|taxi|uber|bolt|cab/.test(h)) return 'd';
-  return '';
+  if (/tube|platform|bus|train|metro|overground|tram|dlr|rail/.test(h)) return 'transit';
+  if (/drive|car|taxi|uber|bolt|cab/.test(h)) return 'driving';
+  return 'walking';
 }
-const mapsHref = s => {
-  const f = dirflg(s.how);
-  return `https://maps.apple.com/?daddr=${encodeURIComponent(s.where)}${f ? '&dirflg=' + f : ''}`;
-};
+const mapsHref = s =>
+  `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(s.where)}&travelmode=${mode(s.how)}`;
+
+/* A multi-stop route. Google Maps holds at most 10 places in one link, so a
+   route is capped there; the path form (/dir/A/B/C) keeps every waypoint in the
+   app, and !3e2 / !3e3 fix the mode to walking / transit. */
+const MODE_CODE = { driving: '0', walking: '2', transit: '3' };
+const routeHref = r => 'https://www.google.com/maps/dir/' +
+  r.stops.slice(0, 10).map(x => encodeURIComponent(x).replace(/%20/g, '+')).join('/') +
+  `/data=!4m2!4m1!3e${MODE_CODE[r.mode || 'walking'] || '2'}`;
 
 function stopBlock(s, big, live = true) {
   const ico = s.ico || KIND_ICO[s.kind] || '◉';
@@ -64,13 +71,13 @@ function stopBlock(s, big, live = true) {
     <div class="tc-t">${esc(s.t || '—')}</div>
     <div class="tc-b">
       <div class="tc-what">${ico} ${esc(s.txt)}</div>
-      ${s.where ? `<div class="tc-where">📍 ${esc(s.where)}</div>` : ''}
+      ${s.where ? `<div class="tc-where">📍 ${big ? esc(s.where) : `<a href="${esc(mapsHref(s))}" target="_blank" rel="noopener">${esc(s.where)}</a>`}</div>` : ''}
       ${s.how ? `<div class="tc-how">↳ ${esc(s.how)}</div>` : ''}
       ${meta ? `<div class="tc-meta">${esc(meta)}</div>` : ''}
       ${s.tip || s.note ? `<div class="tc-tip">${esc(s.tip || s.note)}</div>` : ''}
       ${facts}
       ${big ? `<div class="tc-acts">
-        ${s.where ? `<a class="btn" href="${esc(mapsHref(s))}" target="_blank" rel="noopener">Directions →</a>` : ''}
+        ${s.where ? `<a class="btn" href="${esc(mapsHref(s))}" target="_blank" rel="noopener">Directions in Google Maps →</a>` : ''}
         ${live ? `<button class="btn pri" data-tc-done="${esc(s.id)}">${s.done ? 'Undo' : 'Done ✓'}</button>` : ''}
       </div>` : live ? `<button class="tc-mini" data-tc-done="${esc(s.id)}" aria-label="Mark done">${s.done ? '✓' : ''}</button>` : ''}
     </div>
@@ -121,6 +128,10 @@ export function html(todayISO) {
 
     ${stops.length > 2 ? `<details class="tc-all"><summary>The whole plan · ${stops.length} stops</summary>
       ${stops.map(s => stopBlock(s, false, live)).join('')}</details>` : ''}
+
+    ${(t.routes || []).length ? `<div class="tc-label">The route in Google Maps</div>
+      <div class="tc-routes">${t.routes.map(r => `<a class="btn${r.main ? ' pri' : ''}" href="${esc(routeHref(r))}" target="_blank" rel="noopener">
+        <b>${esc(r.label)}</b><small>${esc(r.sub || `${Math.min(10, r.stops.length)} stops`)}</small></a>`).join('')}</div>` : ''}
   </section>`;
 }
 
