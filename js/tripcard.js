@@ -17,6 +17,8 @@
  *   mins   — how long to spend there
  *   cost   — what it will cost
  *   tip    — the one thing worth knowing at that stop
+ *   ico    — the stop's own emoji, so every place reads as itself
+ *   facts  — things to know and tell about the place: the card's guidebook
  * And a trip may carry: with, meet, bring[{x, done}], contacts[{n, tel}], tips[].
  */
 
@@ -51,7 +53,12 @@ const mapsHref = s => {
 };
 
 function stopBlock(s, big, live = true) {
-  const ico = KIND_ICO[s.kind] || '◉';
+  const ico = s.ico || KIND_ICO[s.kind] || '◉';
+  const facts = (s.facts || []).length
+    ? (big ? `<ul class="tc-facts">${s.facts.map(f => `<li>${esc(f)}</li>`).join('')}</ul>`
+           : `<details class="tc-fx"><summary>About this place · ${s.facts.length}</summary>
+                <ul class="tc-facts">${s.facts.map(f => `<li>${esc(f)}</li>`).join('')}</ul></details>`)
+    : '';
   const meta = [s.mins ? `${s.mins} min there` : '', s.cost ? s.cost : ''].filter(Boolean).join(' · ');
   return `<div class="tc-stop${big ? ' big' : ''}${s.done ? ' done' : ''}">
     <div class="tc-t">${esc(s.t || '—')}</div>
@@ -61,6 +68,7 @@ function stopBlock(s, big, live = true) {
       ${s.how ? `<div class="tc-how">↳ ${esc(s.how)}</div>` : ''}
       ${meta ? `<div class="tc-meta">${esc(meta)}</div>` : ''}
       ${s.tip || s.note ? `<div class="tc-tip">${esc(s.tip || s.note)}</div>` : ''}
+      ${facts}
       ${big ? `<div class="tc-acts">
         ${s.where ? `<a class="btn" href="${esc(mapsHref(s))}" target="_blank" rel="noopener">Directions →</a>` : ''}
         ${live ? `<button class="btn pri" data-tc-done="${esc(s.id)}">${s.done ? 'Undo' : 'Done ✓'}</button>` : ''}
